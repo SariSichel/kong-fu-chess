@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug kong_fu_chess",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/kong_fu_chess.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "CMake: Build"
+        }
+    ]
+}

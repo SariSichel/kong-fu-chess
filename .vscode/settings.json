@@ -1,0 +1,9 @@
+{
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy"
+    ],
+    "cmake.configureSettings": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+    }
+}
