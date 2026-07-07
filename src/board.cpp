@@ -1,5 +1,6 @@
 #include "board.h"
 
+#include <cstdlib>
 #include <sstream>
 
 #include "command_processor.h"
@@ -46,6 +47,93 @@ const std::string& Board::cell(int row, int col) const {
 void Board::movePiece(int fromR, int fromC, int toR, int toC) {
     grid_[toR][toC] = grid_[fromR][fromC];
     grid_[fromR][fromC] = ".";
+}
+
+int Board::sign(int delta) {
+    if (delta > 0) {
+        return 1;
+    }
+    if (delta < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+bool Board::isPathClear(int fromR, int fromC, int toR, int toC) const {
+    const int stepR = sign(toR - fromR);
+    const int stepC = sign(toC - fromC);
+    int r = fromR + stepR;
+    int c = fromC + stepC;
+
+    while (r != toR || c != toC) {
+        if (!isEmpty(cell(r, c))) {
+            return false;
+        }
+        r += stepR;
+        c += stepC;
+    }
+
+    return true;
+}
+
+bool Board::canKingMove(int fromR, int fromC, int toR, int toC) const {
+    const int dr = std::abs(toR - fromR);
+    const int dc = std::abs(toC - fromC);
+    return dr <= 1 && dc <= 1 && (dr != 0 || dc != 0);
+}
+
+bool Board::canRookMove(int fromR, int fromC, int toR, int toC) const {
+    if (fromR != toR && fromC != toC) {
+        return false;
+    }
+    return isPathClear(fromR, fromC, toR, toC);
+}
+
+bool Board::canBishopMove(int fromR, int fromC, int toR, int toC) const {
+    const int dr = toR - fromR;
+    const int dc = toC - fromC;
+    if (std::abs(dr) != std::abs(dc)) {
+        return false;
+    }
+    return isPathClear(fromR, fromC, toR, toC);
+}
+
+bool Board::canQueenMove(int fromR, int fromC, int toR, int toC) const {
+    return canRookMove(fromR, fromC, toR, toC) ||
+           canBishopMove(fromR, fromC, toR, toC);
+}
+
+bool Board::canKnightMove(int fromR, int fromC, int toR, int toC) const {
+    const int dr = std::abs(toR - fromR);
+    const int dc = std::abs(toC - fromC);
+    return (dr == 1 && dc == 2) || (dr == 2 && dc == 1);
+}
+
+bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
+    if (fromR == toR && fromC == toC) {
+        return false;
+    }
+
+    const std::string& piece = cell(fromR, fromC);
+    if (isEmpty(piece)) {
+        return false;
+    }
+
+    switch (piece[1]) {
+        case 'K':
+            return canKingMove(fromR, fromC, toR, toC);
+        case 'R':
+            return canRookMove(fromR, fromC, toR, toC);
+        case 'B':
+            return canBishopMove(fromR, fromC, toR, toC);
+        case 'Q':
+            return canQueenMove(fromR, fromC, toR, toC);
+        case 'N':
+            return canKnightMove(fromR, fromC, toR, toC);
+        case 'P':
+        default:
+            return false;
+    }
 }
 
 ParseResult Board::parseFromInput(std::istream& in, Board& board) {

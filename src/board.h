@@ -28,12 +28,21 @@ public:
     bool inBounds(int row, int col) const;
     const std::string& cell(int row, int col) const;
     void movePiece(int fromR, int fromC, int toR, int toC);
+    bool canMove(int fromR, int fromC, int toR, int toC) const;
 
     static bool isEmpty(const std::string& token);
     static bool isFriendly(const std::string& token, char friendlyColor);
 
 private:
     static bool isValidToken(const std::string& token);
+    static int sign(int delta);
+
+    bool isPathClear(int fromR, int fromC, int toR, int toC) const;
+    bool canKingMove(int fromR, int fromC, int toR, int toC) const;
+    bool canRookMove(int fromR, int fromC, int toR, int toC) const;
+    bool canBishopMove(int fromR, int fromC, int toR, int toC) const;
+    bool canQueenMove(int fromR, int fromC, int toR, int toC) const;
+    bool canKnightMove(int fromR, int fromC, int toR, int toC) const;
 
     std::vector<std::vector<std::string>> grid_;
 };

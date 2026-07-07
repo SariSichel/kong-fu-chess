@@ -45,6 +45,10 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
+    if (!board.canMove(selectedRow_, selectedCol_, row, col)) {
+        return;
+    }
+
     requestMove(selectedRow_, selectedCol_, row, col);
     clearSelection();
 }
