@@ -5,14 +5,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(KONG_FU_CHESS_SOURCES
+    src/board.cpp
+    src/game_state.cpp
+    src/command_processor.cpp
+)
+
 add_executable(kong_fu_chess
     src/main.cpp
-    src/board.cpp
+    ${KONG_FU_CHESS_SOURCES}
 )
 
 add_executable(board_tests
     src/tests.cpp
-    src/board.cpp
+    ${KONG_FU_CHESS_SOURCES}
 )
 
 if(MSVC)

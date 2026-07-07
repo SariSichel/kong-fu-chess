@@ -2,6 +2,17 @@
 
 #include <sstream>
 
+#include "command_processor.h"
+
+std::string Board::trimLine(const std::string& line) {
+    const size_t start = line.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+    const size_t end = line.find_last_not_of(" \t\r\n");
+    return line.substr(start, end - start + 1);
+}
+
 bool Board::isValidToken(const std::string& token) {
     if (token == ".") {
         return true;
@@ -15,12 +26,36 @@ bool Board::isValidToken(const std::string& token) {
     return false;
 }
 
+bool Board::isEmpty(const std::string& token) {
+    return token == ".";
+}
+
+bool Board::isFriendly(const std::string& token, char friendlyColor) {
+    return !isEmpty(token) && token[0] == friendlyColor;
+}
+
+bool Board::inBounds(int row, int col) const {
+    return row >= 0 && col >= 0 && static_cast<size_t>(row) < rows() &&
+           static_cast<size_t>(col) < cols();
+}
+
+const std::string& Board::cell(int row, int col) const {
+    return grid_[row][col];
+}
+
+void Board::movePiece(int fromR, int fromC, int toR, int toC) {
+    grid_[toR][toC] = grid_[fromR][fromC];
+    grid_[fromR][fromC] = ".";
+}
+
 ParseResult Board::parseFromInput(std::istream& in, Board& board) {
     std::string line;
     bool isParsingBoard = false;
     board.grid_.clear();
 
     while (std::getline(in, line)) {
+        line = trimLine(line);
+
         if (line == "Board:") {
             isParsingBoard = true;
             continue;
@@ -58,24 +93,15 @@ ParseResult Board::parseFromInput(std::istream& in, Board& board) {
 void Board::print(std::ostream& out) const {
     for (size_t i = 0; i < grid_.size(); ++i) {
         for (size_t j = 0; j < grid_[i].size(); ++j) {
+            if (j > 0) {
+                out << ' ';
+            }
             out << grid_[i][j];
         }
+        out << '\n';
     }
 }
 
 int Board::run(std::istream& in, std::ostream& out) {
-    Board board;
-    const ParseResult result = parseFromInput(in, board);
-
-    if (result == ParseResult::ERROR_UNKNOWN_TOKEN) {
-        out << "ERROR UNKNOWN_TOKEN" << std::endl;
-        return 0;
-    }
-    if (result == ParseResult::ERROR_ROW_WIDTH_MISMATCH) {
-        out << "ERROR ROW_WIDTH_MISMATCH" << std::endl;
-        return 0;
-    }
-
-    board.print(out);
-    return 0;
+    return CommandProcessor::run(in, out);
 }
