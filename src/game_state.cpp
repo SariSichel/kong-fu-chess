@@ -26,6 +26,21 @@ bool squareArrivedThisTick(const std::vector<std::pair<int, int>>& arrivedThisTi
                        });
 }
 
+// A pawn that has just settled on the furthest-forward row for its color is
+// immediately promoted to a Queen. White advances toward row 0; Black advances
+// toward the last row.
+void promotePawnIfEligible(Board& board, int row, int col) {
+    Piece& piece = board.cell(row, col);
+    if (piece.type() != PieceType::Pawn) {
+        return;
+    }
+    const int lastRow =
+        (piece.color() == Color::White) ? 0 : static_cast<int>(board.rows()) - 1;
+    if (row == lastRow) {
+        piece.promote(PieceType::Queen);
+    }
+}
+
 }  // namespace
 
 bool GameState::isActiveMoveStartTick(int fromR, int fromC) const {
@@ -211,6 +226,8 @@ void GameState::resolveArrival(Board& board, const PendingMove& move,
 
     board.arrivePiece(move.fromR, move.fromC, move.toR, move.toC);
     arrivedThisTick.push_back({move.toR, move.toC});
+
+    promotePawnIfEligible(board, move.toR, move.toC);
 
     if (capturedKing) {
         return;

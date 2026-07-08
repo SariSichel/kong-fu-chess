@@ -64,6 +64,8 @@ public:
         destinationCol_ = -1;
     }
 
+    void promote(PieceType newType) { type_ = newType; }
+
 private:
     PieceType type_ = PieceType::Empty;
     Color color_ = Color::White;

@@ -115,11 +115,24 @@ bool Board::canPawnMove(int fromR, int fromC, int toR, int toC) const {
     if (dr == forwardDr && dc == 0) {
         return destination.isEmpty();
     }
+    // Double forward: exactly 2 cells, same column, only from the starting row.
+    // The intermediate cell AND the target cell must both be empty.
+    if (dr == 2 * forwardDr && dc == 0) {
+        // Start row is the edge opposite the promotion row: White starts on the
+        // bottom row (rows()-1) and advances up; Black starts on row 0 and moves down.
+        const int startRow =
+            (piece.color() == Color::White) ? static_cast<int>(rows()) - 1 : 0;
+        if (fromR != startRow) {
+            return false;
+        }
+        const int intermediateR = fromR + forwardDr;
+        return cell(intermediateR, fromC).isEmpty() && destination.isEmpty();
+    }
     // Diagonal capture: exactly 1 cell diagonally forward, enemy on destination
     if (dr == forwardDr && std::abs(dc) == 1) {
         return !destination.isEmpty() && !destination.isFriendly(piece.color());
     }
-    // Everything else is illegal (including 2-cell forward, backward, sideways)
+    // Everything else is illegal (backward, sideways, >2 forward)
     return false;
 }
 

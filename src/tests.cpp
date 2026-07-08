@@ -228,7 +228,7 @@ TEST_CASE("Knight movement") {
 
 TEST_CASE("Pawn movement") {
     CHECK(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
-                   "1000\nprint board") == "wP . .\n. . .\n. . .\n");
+                   "1000\nprint board") == "wQ . .\n. . .\n. . .\n");
     CHECK(runInput(" Board:\n. . .\n. . .\nwP . .\nCommands:\nclick 50 250\nclick 50 50\nwait "
                    "1000\nprint board") == ". . .\n. . .\nwP . .\n");
     CHECK(runInput(" Board:\nbP . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
@@ -236,7 +236,132 @@ TEST_CASE("Pawn movement") {
     CHECK(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
                    "1000\nprint board") == ". . .\nwP . .\n. . .\n");
     CHECK(runInput(" Board:\n. bP .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
-                   "1000\nprint board") == ". wP .\n. . .\n. . .\n");
+                   "1000\nprint board") == ". wQ .\n. . .\n. . .\n");
+}
+
+// --- Pawn advanced rules: double move, path clearance, promotion ---
+
+TEST_CASE("pawn: valid single step forward (white, no promotion)") {
+    // 3-row board => white start row is rows()-1 == 2. A single step is always legal;
+    // the destination (row 1) is not the last row, so no promotion happens.
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\nCommands:\nclick 50 250\nclick 50 150\nwait "
+                   "1000\nprint board") == ". .\nwP .\n. .\n");
+}
+
+TEST_CASE("pawn: valid single step forward (black, no promotion)") {
+    // Black moves down (increasing row). Pawn at row 0 steps to row 1 (not last row).
+    CHECK(runInput(" Board:\nbP .\n. .\n. .\nCommands:\nclick 50 50\nclick 50 150\nwait "
+                   "1000\nprint board") == ". .\nbP .\n. .\n");
+}
+
+TEST_CASE("pawn: valid double step from start row (white)") {
+    // 5-row board => white start row is the bottom row (rows()-1 == 4). Pawn jumps
+    // 4 -> 2 (not the last row). Double-step duration is 2 * kMoveDurationMs.
+    CHECK(runInput(" Board:\n. .\n. .\n. .\n. .\nwP .\nCommands:\nclick 50 450\nclick 50 "
+                   "250\nwait 2000\nprint board") == ". .\n. .\nwP .\n. .\n. .\n");
+}
+
+TEST_CASE("pawn: valid double step from start row (black)") {
+    // 5-row board => black start row is the top row (0). Pawn jumps 0 -> 2 (not last row).
+    CHECK(runInput(" Board:\nbP .\n. .\n. .\n. .\n. .\nCommands:\nclick 50 50\nclick 50 "
+                   "250\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\n. .\n");
+}
+
+TEST_CASE("pawn: double step blocked by intermediate cell is rejected") {
+    // White pawn on the start row (row 4). Intermediate cell (row 3) is occupied, so
+    // the 4 -> 2 double step must be rejected and nothing on the board changes.
+    CHECK(runInput(" Board:\n. .\n. .\n. .\nbP .\nwP .\nCommands:\nclick 50 450\nclick 50 "
+                   "250\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\nwP .\n");
+}
+
+TEST_CASE("pawn: double step blocked by occupied target is rejected") {
+    // White pawn on the start row (row 4). Target cell (row 2) is occupied, so the
+    // 4 -> 2 double step must be rejected and nothing on the board changes.
+    CHECK(runInput(" Board:\n. .\n. .\nbP .\n. .\nwP .\nCommands:\nclick 50 450\nclick 50 "
+                   "250\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\nwP .\n");
+}
+
+TEST_CASE("pawn: double step from a non-start row is rejected") {
+    // 5-row board => white start row is 4. Pawn sits on row 2 (not start row), so a
+    // 2 -> 0 double step is illegal and the pawn stays put.
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\n. .\nCommands:\nclick 50 250\nclick 50 "
+                   "50\nwait 2000\nprint board") == ". .\n. .\nwP .\n. .\n. .\n");
+}
+
+TEST_CASE("pawn: single-step promotion into final row (white)") {
+    // White pawn one step from the top row (row 0) promotes to a Queen on arrival.
+    CHECK(runInput(" Board:\n. .\nwP .\nCommands:\nclick 50 150\nclick 50 50\nwait "
+                   "1000\nprint board") == "wQ .\n. .\n");
+}
+
+TEST_CASE("pawn: single-step promotion into final row (black)") {
+    // Black pawn one step from the bottom row (last row) promotes to a Queen.
+    CHECK(runInput(" Board:\nbP .\n. .\nCommands:\nclick 50 50\nclick 50 150\nwait "
+                   "1000\nprint board") == ". .\nbQ .\n");
+}
+
+TEST_CASE("pawn: double-step promotion into final row (white)") {
+    // 3-row board => white start row is rows()-1 == 2 and the last row is 0. The 2 -> 0
+    // double step is legal and lands directly on the promotion row.
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\nCommands:\nclick 50 250\nclick 50 50\nwait "
+                   "2000\nprint board") == "wQ .\n. .\n. .\n");
+}
+
+TEST_CASE("pawn: double-step promotion into final row (black)") {
+    // 3-row board => black start row is 0 and the last row is rows()-1 == 2. The 0 -> 2
+    // double step is legal and lands directly on the promotion row.
+    CHECK(runInput(" Board:\nbP .\n. .\n. .\nCommands:\nclick 50 50\nclick 50 250\nwait "
+                   "2000\nprint board") == ". .\n. .\nbQ .\n");
+}
+
+TEST_CASE("pawn: promotion happens via GameState arrival (state-level check)") {
+    // Verify at the object level that validation runs before any board mutation and
+    // that the pawn becomes a Queen only once it settles on the last row.
+    Board board;
+    board.addRow({Piece::empty(), Piece::empty()});
+    board.addRow({Piece(PieceType::Pawn, Color::White), Piece::empty()});
+
+    GameState state;
+    state.reset();
+
+    clickSquare(state, board, 1, 0);
+    clickSquare(state, board, 0, 0);
+
+    // Move is validated and started, but the piece is still a Pawn mid-flight.
+    CHECK(isPieceMovingAt(board, 1, 0));
+    CHECK(board.cell(1, 0).type() == PieceType::Pawn);
+
+    state.advanceTime(moveDurationMs(1, 0, 0, 0), board);
+
+    CHECK(hasPieceAt(board, 0, 0, PieceType::Queen, Color::White));
+    CHECK_FALSE(hasPieceAt(board, 0, 0, PieceType::Pawn, Color::White));
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+}
+
+TEST_CASE("pawn: invalid double step leaves the board completely unchanged") {
+    // Strict validation ordering: an illegal move must alter nothing on the board.
+    Board board;
+    board.addRow({Piece::empty(), Piece::empty()});
+    board.addRow({Piece::empty(), Piece::empty()});
+    board.addRow({Piece(PieceType::Pawn, Color::White), Piece::empty()});
+    board.addRow({Piece::empty(), Piece::empty()});
+    board.addRow({Piece::empty(), Piece::empty()});
+
+    GameState state;
+    state.reset();
+
+    // Pawn at row 2 is NOT on the start row (rows()-1 == 4), so a 2 -> 0 jump is invalid.
+    clickSquare(state, board, 2, 0);
+    clickSquare(state, board, 0, 0);
+
+    CHECK_FALSE(isPieceMovingAt(board, 2, 0));
+    CHECK(hasPieceAt(board, 2, 0, PieceType::Pawn, Color::White));
+
+    state.advanceTime(moveDurationMs(2, 0, 0, 0), board);
+
+    CHECK(hasPieceAt(board, 2, 0, PieceType::Pawn, Color::White));
+    CHECK_FALSE(hasPieceAt(board, 0, 0, PieceType::Pawn, Color::White));
+    CHECK_FALSE(hasPieceAt(board, 0, 0, PieceType::Queen, Color::White));
 }
 
 TEST_CASE("timed movement before and after arrival") {
