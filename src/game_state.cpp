@@ -28,16 +28,38 @@ bool squareArrivedThisTick(const std::vector<std::pair<int, int>>& arrivedThisTi
 
 }  // namespace
 
+bool GameState::isActiveMoveStartTick(int fromR, int fromC) const {
+    return std::any_of(pendingMoves_.begin(), pendingMoves_.end(),
+                       [fromR, fromC, this](const PendingMove& move) {
+                           return move.fromR == fromR && move.fromC == fromC &&
+                                  move.startedAt == elapsedMs_;
+                       });
+}
+
 void GameState::reset() {
     elapsedMs_ = 0;
+    nextMoveId_ = 0;
     selectedRow_ = GameConfig::kNoSelection;
     selectedCol_ = GameConfig::kNoSelection;
     pendingMoves_.clear();
+    premoves_.clear();
 }
 
 void GameState::clearSelection() {
     selectedRow_ = GameConfig::kNoSelection;
     selectedCol_ = GameConfig::kNoSelection;
+}
+
+bool GameState::hasPremoveAt(int sourceR, int sourceC) const {
+    return premoves_.find({sourceR, sourceC}) != premoves_.end();
+}
+
+void GameState::queuePremove(int keyR, int keyC, int fromR, int fromC, int toR, int toC) {
+    premoves_[{keyR, keyC}] = {fromR, fromC, toR, toC};
+}
+
+void GameState::clearPremoveAt(int sourceR, int sourceC) {
+    premoves_.erase({sourceR, sourceC});
 }
 
 void GameState::handleClick(Board& board, int x, int y) {
@@ -55,7 +77,7 @@ void GameState::handleClick(Board& board, int x, int y) {
     const Piece& piece = board.cell(row, col);
 
     if (!hasSelection()) {
-        if (piece.isEmpty() || !piece.isFriendly(GameConfig::kFriendlyColor)) {
+        if (piece.isEmpty()) {
             return;
         }
         selectedRow_ = row;
@@ -63,9 +85,22 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
-    if (!piece.isEmpty() && piece.isFriendly(GameConfig::kFriendlyColor)) {
-        selectedRow_ = row;
-        selectedCol_ = col;
+    if (!piece.isEmpty()) {
+        const Piece& selectedPiece = board.cell(selectedRow_, selectedCol_);
+        if (piece.color() == selectedPiece.color()) {
+            selectedRow_ = row;
+            selectedCol_ = col;
+            return;
+        }
+    }
+
+    Piece& selectedPiece = board.cell(selectedRow_, selectedCol_);
+    if (selectedPiece.isMoving()) {
+        if (isActiveMoveStartTick(selectedRow_, selectedCol_)) {
+            queuePremove(selectedRow_, selectedCol_, selectedPiece.destinationRow(),
+                         selectedPiece.destinationCol(), row, col);
+        }
+        clearSelection();
         return;
     }
 
@@ -89,7 +124,7 @@ bool GameState::requestMove(int fromR, int fromC, int toR, int toC, Board& board
     const long durationMs = moveDurationMs(fromR, fromC, toR, toC);
     piece.beginMove(fromR, fromC, toR, toC);
     pendingMoves_.push_back(
-        {fromR, fromC, toR, toC, elapsedMs_, elapsedMs_ + durationMs});
+        {fromR, fromC, toR, toC, elapsedMs_, elapsedMs_ + durationMs, nextMoveId_++});
     return true;
 }
 
@@ -107,10 +142,28 @@ bool GameState::pendingMoveLess(const PendingMove& a, const PendingMove& b) {
     if (a.startedAt != b.startedAt) {
         return a.startedAt < b.startedAt;
     }
-    if (a.fromR != b.fromR) {
-        return a.fromR < b.fromR;
+    return a.moveId < b.moveId;
+}
+
+void GameState::tryExecutePremove(Board& board, int moveSourceR, int moveSourceC, int arrivalR,
+                                  int arrivalC) {
+    const auto it = premoves_.find({moveSourceR, moveSourceC});
+    if (it == premoves_.end()) {
+        return;
     }
-    return a.fromC < b.fromC;
+
+    const Premove premove = it->second;
+    premoves_.erase(it);
+
+    if (premove.fromR != arrivalR || premove.fromC != arrivalC) {
+        return;
+    }
+
+    if (!board.canMove(arrivalR, arrivalC, premove.toR, premove.toC)) {
+        return;
+    }
+
+    requestMove(arrivalR, arrivalC, premove.toR, premove.toC, board);
 }
 
 void GameState::resolveArrival(Board& board, const PendingMove& move,
@@ -128,17 +181,20 @@ void GameState::resolveArrival(Board& board, const PendingMove& move,
     if (!destination.isEmpty()) {
         if (destination.isFriendly(mover.color())) {
             board.cancelMoveAt(move.fromR, move.fromC);
+            clearPremoveAt(move.fromR, move.fromC);
             return;
         }
 
         if (squareArrivedThisTick(arrivedThisTick, move.toR, move.toC)) {
             board.removePieceAt(move.fromR, move.fromC);
+            clearPremoveAt(move.fromR, move.fromC);
             return;
         }
     }
 
     board.arrivePiece(move.fromR, move.fromC, move.toR, move.toC);
     arrivedThisTick.push_back({move.toR, move.toC});
+    tryExecutePremove(board, move.fromR, move.fromC, move.toR, move.toC);
 }
 
 void GameState::processCompletedMoves(Board& board) {

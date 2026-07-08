@@ -66,10 +66,7 @@ void requestMoveDirect(GameState& state, Board& board, int fromR, int fromC, int
 
 // TDD placeholder — wire to GameState premove storage when the engine supports it.
 bool hasPremoveQueued(const GameState& state, int fromR, int fromC) {
-    (void)state;
-    (void)fromR;
-    (void)fromC;
-    return false;
+    return state.hasPremoveAt(fromR, fromC);
 }
 
 // Stub until GameState exposes premove queue — wire to premoves_ when engine adds it.
@@ -250,9 +247,9 @@ TEST_CASE("timed movement before and after arrival") {
           "wB . .\n. . .\n. . .\n. . .\n. . .\n. . wB\n");
 }
 
-TEST_CASE("architecture gap: enemy selection ignored") {
-    CHECK(runInput(" Board:\nbK . wK\n. . .\nCommands:\nclick 50 50\nclick 150 150\nwait "
-                   "1000\nprint board") == "bK . wK\n. . .\n");
+TEST_CASE("enemy collision via click integration") {
+    CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 350 50\nclick 50 50\nclick 50 50\nclick "
+                   "350 50\nwait 3000\nprint board") == "bR . . .\n");
 }
 
 TEST_CASE("architecture gap: concurrent pending moves") {
@@ -441,15 +438,15 @@ TEST_CASE("test_enemy_collision_absolute_tie") {
     constexpr int kDestC = 3;
     const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    requestMoveDirect(state, board, kWhiteR, kWhiteC, kDestR, kDestC);
     requestMoveDirect(state, board, kBlackR, kBlackC, kDestR, kDestC);
+    requestMoveDirect(state, board, kWhiteR, kWhiteC, kDestR, kDestC);
 
     state.advanceTime(kTravelMs, board);
 
-    // Tie-breaker: lower source row wins (white rook at row 0 vs black rook at row 2).
-    CHECK(hasRookAt(board, kDestR, kDestC, Color::White));
-    CHECK_FALSE(hasRookAt(board, kDestR, kDestC, Color::Black));
-    CHECK_FALSE(hasRookAt(board, kBlackR, kBlackC, Color::Black));
+    // Tie-breaker: earlier command order wins (black requested first at the same tick).
+    CHECK(hasRookAt(board, kDestR, kDestC, Color::Black));
+    CHECK_FALSE(hasRookAt(board, kDestR, kDestC, Color::White));
+    CHECK_FALSE(hasRookAt(board, kWhiteR, kWhiteC, Color::White));
 }
 
 TEST_CASE("test_premove_executes_on_arrival") {

@@ -1,7 +1,10 @@
 #ifndef GAME_STATE_H
 #define GAME_STATE_H
 
+#include <cstdint>
 #include <iosfwd>
+#include <map>
+#include <utility>
 #include <vector>
 
 #include "constants.h"
@@ -21,7 +24,16 @@ public:
     int selectedRow() const { return selectedRow_; }
     int selectedCol() const { return selectedCol_; }
 
+    bool hasPremoveAt(int sourceR, int sourceC) const;
+
 private:
+    struct Premove {
+        int fromR;
+        int fromC;
+        int toR;
+        int toC;
+    };
+
     struct PendingMove {
         int fromR;
         int fromC;
@@ -29,10 +41,16 @@ private:
         int toC;
         long startedAt;
         long finishAt;
+        uint64_t moveId;
     };
 
     void clearSelection();
     bool requestMove(int fromR, int fromC, int toR, int toC, Board& board);
+    void queuePremove(int keyR, int keyC, int fromR, int fromC, int toR, int toC);
+    void clearPremoveAt(int sourceR, int sourceC);
+    void tryExecutePremove(Board& board, int moveSourceR, int moveSourceC, int arrivalR,
+                           int arrivalC);
+    bool isActiveMoveStartTick(int fromR, int fromC) const;
     bool hasArrived(const PendingMove& move) const;
     static bool pendingMoveLess(const PendingMove& a, const PendingMove& b);
     void resolveArrival(Board& board, const PendingMove& move,
@@ -40,9 +58,11 @@ private:
     void processCompletedMoves(Board& board);
 
     long elapsedMs_ = 0;
+    uint64_t nextMoveId_ = 0;
     int selectedRow_ = GameConfig::kNoSelection;
     int selectedCol_ = GameConfig::kNoSelection;
     std::vector<PendingMove> pendingMoves_;
+    std::map<std::pair<int, int>, Premove> premoves_;
 };
 
 #endif
