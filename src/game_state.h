@@ -25,6 +25,7 @@ public:
     int selectedCol() const { return selectedCol_; }
 
     bool hasPremoveAt(int sourceR, int sourceC) const;
+    bool isGameOver() const { return gameOver_; }
 
 private:
     struct Premove {
@@ -63,6 +64,8 @@ private:
     int selectedCol_ = GameConfig::kNoSelection;
     std::vector<PendingMove> pendingMoves_;
     std::map<std::pair<int, int>, Premove> premoves_;
+    bool gameOver_ = false;
+    Color winner_ = Color::White;
 };
 
 #endif

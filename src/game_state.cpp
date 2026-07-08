@@ -43,6 +43,8 @@ void GameState::reset() {
     selectedCol_ = GameConfig::kNoSelection;
     pendingMoves_.clear();
     premoves_.clear();
+    gameOver_ = false;
+    winner_ = Color::White;
 }
 
 void GameState::clearSelection() {
@@ -63,6 +65,10 @@ void GameState::clearPremoveAt(int sourceR, int sourceC) {
 }
 
 void GameState::handleClick(Board& board, int x, int y) {
+    if (gameOver_) {
+        return;
+    }
+
     if (x < 0 || y < 0) {
         return;
     }
@@ -116,6 +122,10 @@ void GameState::handleClick(Board& board, int x, int y) {
 }
 
 bool GameState::requestMove(int fromR, int fromC, int toR, int toC, Board& board) {
+    if (gameOver_) {
+        return false;
+    }
+
     Piece& piece = board.cell(fromR, fromC);
     if (piece.isMoving()) {
         return false;
@@ -192,8 +202,20 @@ void GameState::resolveArrival(Board& board, const PendingMove& move,
         }
     }
 
+    const bool capturedKing = !destination.isEmpty() && destination.type() == PieceType::King &&
+                              !destination.isFriendly(mover.color());
+    if (capturedKing) {
+        gameOver_ = true;
+        winner_ = mover.color();
+    }
+
     board.arrivePiece(move.fromR, move.fromC, move.toR, move.toC);
     arrivedThisTick.push_back({move.toR, move.toC});
+
+    if (capturedKing) {
+        return;
+    }
+
     tryExecutePremove(board, move.fromR, move.fromC, move.toR, move.toC);
 }
 
@@ -223,6 +245,9 @@ void GameState::processCompletedMoves(Board& board) {
     arrivedThisTick.reserve(completingMoves.size());
 
     for (const PendingMove& move : completingMoves) {
+        if (gameOver_) {
+            break;
+        }
         resolveArrival(board, move, arrivedThisTick);
     }
 }

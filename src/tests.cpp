@@ -94,6 +94,29 @@ Board makeArrivalOrderBoard() {
     return board;
 }
 
+Board makeBasicKingCaptureBoard() {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::King, Color::Black)});
+    return board;
+}
+
+Board makeIgnoreMovesAfterGameOverBoard() {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::King, Color::Black)});
+    board.addRow({Piece::empty(), Piece(PieceType::Knight, Color::White), Piece::empty(),
+                  Piece::empty()});
+    return board;
+}
+
+Board makeKingStepsAwayBoard() {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(),
+                  Piece(PieceType::King, Color::Black), Piece::empty()});
+    return board;
+}
+
 PieceMovementState movementStateAt(const Board& board, int row, int col) {
     return board.cell(row, col).movementState();
 }
@@ -557,4 +580,193 @@ TEST_CASE("test_arrival_processing_order_by_started_at") {
     CHECK(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::White));
     CHECK(movementStateAt(board, kKingR, kKingC) == PieceMovementState::Idle);
     CHECK_FALSE(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+}
+
+// --- Game-over behavior tests (TDD: requires GameState::isGameOver()) ---
+
+TEST_CASE("game over: basic king capture ends the game") {
+    Board board = makeBasicKingCaptureBoard();
+    GameState state;
+    state.reset();
+
+    constexpr int kRookR = 0;
+    constexpr int kRookC = 0;
+    constexpr int kKingR = 0;
+    constexpr int kKingC = 3;
+    const long kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+
+    CHECK_FALSE(state.isGameOver());
+
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kKingR, kKingC);
+
+    CHECK_FALSE(state.isGameOver());
+    CHECK(isPieceMovingAt(board, kRookR, kRookC));
+
+    state.advanceTime(kCaptureMs, board);
+
+    CHECK(state.isGameOver());
+    CHECK(hasRookAt(board, kKingR, kKingC, Color::White));
+    CHECK_FALSE(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::Black));
+}
+
+TEST_CASE("game over: moves are ignored after king capture") {
+    Board board = makeIgnoreMovesAfterGameOverBoard();
+    GameState state;
+    state.reset();
+
+    constexpr int kRookR = 0;
+    constexpr int kRookC = 0;
+    constexpr int kKingR = 0;
+    constexpr int kKingC = 3;
+    constexpr int kKnightR = 1;
+    constexpr int kKnightC = 1;
+    constexpr int kKnightDestR = 1;
+    constexpr int kKnightDestC = 2;
+    const long kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kKingR, kKingC);
+    state.advanceTime(kCaptureMs, board);
+
+    CHECK(state.isGameOver());
+    CHECK(hasRookAt(board, kKingR, kKingC, Color::White));
+    CHECK(hasPieceAt(board, kKnightR, kKnightC, PieceType::Knight, Color::White));
+
+    clickSquare(state, board, kKnightR, kKnightC);
+    clickSquare(state, board, kKnightDestR, kKnightDestC);
+
+    CHECK(hasPieceAt(board, kKnightR, kKnightC, PieceType::Knight, Color::White));
+    CHECK_FALSE(isPieceMovingAt(board, kKnightR, kKnightC));
+    CHECK_FALSE(hasPieceAt(board, kKnightDestR, kKnightDestC, PieceType::Knight, Color::White));
+
+    state.advanceTime(moveDurationMs(kKnightR, kKnightC, kKnightDestR, kKnightDestC), board);
+
+    CHECK(hasPieceAt(board, kKnightR, kKnightC, PieceType::Knight, Color::White));
+    CHECK_FALSE(hasPieceAt(board, kKnightDestR, kKnightDestC, PieceType::Knight, Color::White));
+    CHECK(state.isGameOver());
+}
+
+TEST_CASE("game over: friendly collision on own king does not end game") {
+    Board board = makeFriendlyLandingBoard();
+    GameState state;
+    state.reset();
+
+    constexpr int kRookR = 0;
+    constexpr int kRookC = 0;
+    constexpr int kKingR = 0;
+    constexpr int kKingC = 1;
+    constexpr int kTargetR = 0;
+    constexpr int kTargetC = 2;
+    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
+    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
+
+    CHECK_FALSE(state.isGameOver());
+
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kTargetR, kTargetC);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kTargetR, kTargetC);
+
+    state.advanceTime(kKingTravelMs, board);
+    CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+
+    state.advanceTime(kRookTravelMs - kKingTravelMs, board);
+
+    CHECK_FALSE(state.isGameOver());
+    CHECK(hasRookAt(board, kRookR, kRookC));
+    CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+    CHECK_FALSE(hasRookAt(board, kTargetR, kTargetC));
+}
+
+TEST_CASE("game over: simultaneous arrival tie does not capture the king") {
+    Board board = makeArrivalOrderBoard();
+    GameState state;
+    state.reset();
+
+    constexpr int kRookR = 0;
+    constexpr int kRookC = 0;
+    constexpr int kKingR = 1;
+    constexpr int kKingC = 2;
+    constexpr int kTargetR = 0;
+    constexpr int kTargetC = 2;
+    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
+    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
+
+    CHECK_FALSE(state.isGameOver());
+
+    // Rook starts first; king races to the same square and arrives on the same tick.
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kTargetR, kTargetC);
+    state.advanceTime(1000, board);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kTargetR, kTargetC);
+
+    CHECK(kRookTravelMs == kKingTravelMs + 1000);
+
+    state.advanceTime(kKingTravelMs, board);
+
+    // Tie-breaker: rook started first, so it occupies the square. The king is not captured.
+    CHECK_FALSE(state.isGameOver());
+    CHECK(hasRookAt(board, kTargetR, kTargetC));
+    CHECK(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::White));
+    CHECK(movementStateAt(board, kKingR, kKingC) == PieceMovementState::Idle);
+    CHECK_FALSE(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+}
+
+TEST_CASE("game over: king steps away before attacker arrives") {
+    Board board = makeKingStepsAwayBoard();
+    GameState state;
+    state.reset();
+
+    constexpr int kRookR = 0;
+    constexpr int kRookC = 0;
+    constexpr int kKingR = 0;
+    constexpr int kKingC = 2;
+    constexpr int kKingDestR = 0;
+    constexpr int kKingDestC = 3;
+    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kKingDestR, kKingDestC);
+
+    CHECK_FALSE(state.isGameOver());
+
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kKingDestR, kKingDestC);
+
+    state.advanceTime(kKingTravelMs, board);
+
+    CHECK(hasPieceAt(board, kKingDestR, kKingDestC, PieceType::King, Color::Black));
+    CHECK_FALSE(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::Black));
+    CHECK(isPieceMovingAt(board, kRookR, kRookC));
+
+    state.advanceTime(kRookTravelMs - kKingTravelMs, board);
+
+    CHECK_FALSE(state.isGameOver());
+    CHECK(hasRookAt(board, kKingR, kKingC, Color::White));
+    CHECK(hasPieceAt(board, kKingDestR, kKingDestC, PieceType::King, Color::Black));
+    CHECK_FALSE(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::Black));
+}
+
+TEST_CASE("game over: reset clears game-over flag") {
+    Board board = makeBasicKingCaptureBoard();
+    GameState state;
+    state.reset();
+
+    constexpr int kRookR = 0;
+    constexpr int kRookC = 0;
+    constexpr int kKingR = 0;
+    constexpr int kKingC = 3;
+    const long kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kKingR, kKingC);
+    state.advanceTime(kCaptureMs, board);
+
+    CHECK(state.isGameOver());
+
+    state.reset();
+
+    CHECK_FALSE(state.isGameOver());
 }
