@@ -6,6 +6,8 @@
 
 #include "board.h"
 #include "board_serializer.h"
+#include "constants.h"
+#include "game_state.h"
 
 namespace {
 
@@ -20,6 +22,50 @@ std::string runInput(const std::string& input) {
     Board::run(in, out);
     return out.str();
 }
+
+Board makeCommonRouteBoard() {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    return board;
+}
+
+void clickSquare(GameState& state, Board& board, int row, int col) {
+    const int x = col * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
+    const int y = row * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
+    state.handleClick(board, x, y);
+}
+
+bool hasRookAt(const Board& board, int row, int col) {
+    const Piece& piece = board.cell(row, col);
+    return piece.type() == PieceType::Rook && piece.color() == Color::White;
+}
+
+PieceMovementState movementStateAt(const Board& board, int row, int col) {
+    return board.cell(row, col).movementState();
+}
+
+bool isPieceMovingAt(const Board& board, int row, int col) {
+    return movementStateAt(board, row, col) == PieceMovementState::Moving;
+}
+
+int pieceDestinationRow(const Board& board, int row, int col) {
+    return board.cell(row, col).destinationRow();
+}
+
+int pieceDestinationCol(const Board& board, int row, int col) {
+    return board.cell(row, col).destinationCol();
+}
+
+constexpr int kSquareA_R = 0;
+constexpr int kSquareA_C = 0;
+constexpr int kSquareB_R = 0;
+constexpr int kSquareB_C = 2;
+constexpr int kSquareC_R = 0;
+constexpr int kSquareC_C = 3;
+
+constexpr long kMoveAToBDurationMs = 2 * GameConfig::kMoveDurationMs;
+constexpr long kMoveBToCDurationMs = 1 * GameConfig::kMoveDurationMs;
 
 }  // namespace
 
@@ -139,4 +185,114 @@ TEST_CASE("architecture gap: concurrent pending moves") {
 TEST_CASE("architecture gap: print before wait shows source") {
     CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nprint board") ==
           "wR . .\n");
+}
+
+TEST_CASE("test_cannot_redirect_while_moving") {
+    Board board = makeCommonRouteBoard();
+    GameState state;
+    state.reset();
+
+    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Idle);
+
+    clickSquare(state, board, kSquareA_R, kSquareA_C);
+    clickSquare(state, board, kSquareB_R, kSquareB_C);
+
+    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+
+    state.advanceTime(kMoveAToBDurationMs / 2, board);
+
+    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+
+    clickSquare(state, board, kSquareA_R, kSquareA_C);
+    clickSquare(state, board, kSquareC_R, kSquareC_C);
+
+    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+
+    state.advanceTime(kMoveAToBDurationMs / 2, board);
+
+    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
+    CHECK_FALSE(hasRookAt(board, kSquareC_R, kSquareC_C));
+    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
+}
+
+TEST_CASE("test_cannot_send_duplicate_command_while_moving") {
+    Board board = makeCommonRouteBoard();
+    GameState state;
+    state.reset();
+
+    clickSquare(state, board, kSquareA_R, kSquareA_C);
+    clickSquare(state, board, kSquareB_R, kSquareB_C);
+
+    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+
+    state.advanceTime(kMoveAToBDurationMs / 2, board);
+
+    clickSquare(state, board, kSquareA_R, kSquareA_C);
+    clickSquare(state, board, kSquareB_R, kSquareB_C);
+
+    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+
+    state.advanceTime(kMoveAToBDurationMs / 2, board);
+
+    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
+    CHECK_FALSE(hasRookAt(board, kSquareA_R, kSquareA_C));
+}
+
+TEST_CASE("test_can_move_immediately_upon_arrival_no_cooldown") {
+    Board board = makeCommonRouteBoard();
+    GameState state;
+    state.reset();
+
+    clickSquare(state, board, kSquareA_R, kSquareA_C);
+    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    state.advanceTime(kMoveAToBDurationMs, board);
+
+    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
+    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
+
+    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(state, board, kSquareC_R, kSquareC_C);
+
+    CHECK(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
+    CHECK(pieceDestinationRow(board, kSquareB_R, kSquareB_C) == kSquareC_R);
+    CHECK(pieceDestinationCol(board, kSquareB_R, kSquareB_C) == kSquareC_C);
+
+    state.advanceTime(kMoveBToCDurationMs, board);
+
+    CHECK(hasRookAt(board, kSquareC_R, kSquareC_C));
+    CHECK_FALSE(hasRookAt(board, kSquareB_R, kSquareB_C));
+}
+
+TEST_CASE("test_piece_state_transitions_correctly") {
+    Board board = makeCommonRouteBoard();
+    GameState state;
+    state.reset();
+
+    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Idle);
+    CHECK_FALSE(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+
+    clickSquare(state, board, kSquareA_R, kSquareA_C);
+    clickSquare(state, board, kSquareB_R, kSquareB_C);
+
+    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Moving);
+    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+
+    state.advanceTime(kMoveAToBDurationMs - 1, board);
+    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Moving);
+
+    state.advanceTime(1, board);
+
+    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
+    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
+    CHECK_FALSE(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
 }

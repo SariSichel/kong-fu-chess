@@ -6,6 +6,7 @@
 #include "board.h"
 #include "board_serializer.h"
 #include "constants.h"
+#include "piece.h"
 
 namespace {
 
@@ -63,24 +64,49 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
-    requestMove(selectedRow_, selectedCol_, row, col);
+    if (!requestMove(selectedRow_, selectedCol_, row, col, board)) {
+        return;
+    }
+
     clearSelection();
 }
 
-void GameState::requestMove(int fromR, int fromC, int toR, int toC) {
+bool GameState::requestMove(int fromR, int fromC, int toR, int toC, Board& board) {
+    Piece& piece = board.cell(fromR, fromC);
+    if (piece.isMoving()) {
+        return false;
+    }
+
+    const long durationMs = moveDurationMs(fromR, fromC, toR, toC);
+    piece.beginMove(fromR, fromC, toR, toC);
     pendingMoves_.push_back(
-        {fromR, fromC, toR, toC, elapsedMs_ + moveDurationMs(fromR, fromC, toR, toC)});
+        {fromR, fromC, toR, toC, elapsedMs_, elapsedMs_ + durationMs});
+    return true;
+}
+
+bool GameState::hasArrived(const PendingMove& move) const {
+    const long durationMs = move.finishAt - move.startedAt;
+    if (durationMs <= 0) {
+        return true;
+    }
+
+    const long elapsedOnMove = elapsedMs_ - move.startedAt;
+    return elapsedOnMove >= durationMs;
+}
+
+void GameState::arriveAtDestination(Board& board, const PendingMove& move) {
+    board.arrivePiece(move.fromR, move.fromC, move.toR, move.toC);
 }
 
 void GameState::processCompletedMoves(Board& board) {
     for (size_t i = 0; i < pendingMoves_.size();) {
         const PendingMove& move = pendingMoves_[i];
-        if (elapsedMs_ < move.finishAt) {
+        if (!hasArrived(move)) {
             ++i;
             continue;
         }
 
-        board.movePiece(move.fromR, move.fromC, move.toR, move.toC);
+        arriveAtDestination(board, move);
         pendingMoves_.erase(pendingMoves_.begin() + static_cast<long>(i));
     }
 }

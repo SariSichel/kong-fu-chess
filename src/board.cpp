@@ -21,9 +21,19 @@ const Piece& Board::cell(int row, int col) const {
     return grid_[row][col];
 }
 
+Piece& Board::cell(int row, int col) {
+    return grid_[row][col];
+}
+
 void Board::movePiece(int fromR, int fromC, int toR, int toC) {
     grid_[toR][toC] = grid_[fromR][fromC];
     grid_[fromR][fromC] = Piece::empty();
+}
+
+void Board::arrivePiece(int fromR, int fromC, int toR, int toC) {
+    grid_[toR][toC] = grid_[fromR][fromC];
+    grid_[fromR][fromC] = Piece::empty();
+    grid_[toR][toC].finishMove();
 }
 
 int Board::sign(int delta) {

@@ -27,11 +27,14 @@ private:
         int fromC;
         int toR;
         int toC;
+        long startedAt;
         long finishAt;
     };
 
     void clearSelection();
-    void requestMove(int fromR, int fromC, int toR, int toC);
+    bool requestMove(int fromR, int fromC, int toR, int toC, Board& board);
+    bool hasArrived(const PendingMove& move) const;
+    void arriveAtDestination(Board& board, const PendingMove& move);
     void processCompletedMoves(Board& board);
 
     long elapsedMs_ = 0;

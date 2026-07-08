@@ -20,7 +20,9 @@ public:
 
     bool inBounds(int row, int col) const;
     const Piece& cell(int row, int col) const;
+    Piece& cell(int row, int col);
     void movePiece(int fromR, int fromC, int toR, int toC);
+    void arrivePiece(int fromR, int fromC, int toR, int toC);
     bool canMove(int fromR, int fromC, int toR, int toC) const;
 
 private:
