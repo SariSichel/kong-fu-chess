@@ -33,7 +33,8 @@ private:
     bool canBishopMove(int fromR, int fromC, int toR, int toC) const;
     bool canQueenMove(int fromR, int fromC, int toR, int toC) const;
     bool canKnightMove(int fromR, int fromC, int toR, int toC) const;
-
+    bool canPawnMove(int fromR, int fromC, int toR, int toC) const;
+    //board grid
     std::vector<std::vector<Piece>> grid_;
 };
 

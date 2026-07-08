@@ -86,6 +86,25 @@ bool Board::canKnightMove(int fromR, int fromC, int toR, int toC) const {
     return (dr == 1 && dc == 2) || (dr == 2 && dc == 1);
 }
 
+bool Board::canPawnMove(int fromR, int fromC, int toR, int toC) const {
+    const int dr = toR - fromR;
+    const int dc = toC - fromC;
+    const Piece& piece = cell(fromR, fromC);
+    const Piece& destination = cell(toR, toC);
+    // White moves up (decreasing row); Black moves down (increasing row)
+    const int forwardDr = (piece.color() == Color::White) ? -1 : 1;
+    // Forward: exactly 1 cell, same column, destination must be empty
+    if (dr == forwardDr && dc == 0) {
+        return destination.isEmpty();
+    }
+    // Diagonal capture: exactly 1 cell diagonally forward, enemy on destination
+    if (dr == forwardDr && std::abs(dc) == 1) {
+        return !destination.isEmpty() && !destination.isFriendly(piece.color());
+    }
+    // Everything else is illegal (including 2-cell forward, backward, sideways)
+    return false;
+}
+
 bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
     if (fromR == toR && fromC == toC) {
         return false;
@@ -118,6 +137,8 @@ bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
             movementOk = canKnightMove(fromR, fromC, toR, toC);
             break;
         case PieceType::Pawn:
+            movementOk = canPawnMove(fromR, fromC, toR, toC);
+            break;
         case PieceType::Empty:
         default:
             return false;

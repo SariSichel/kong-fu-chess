@@ -105,5 +105,21 @@ int main() {
     assert(runInput(" Board:\nwN . .\n. . bP\n. . .\nCommands:\nclick 50 50\nclick 250 150\nwait "
                     "1000\nprint board") == ". . .\n. . wN\n. . .\n");
 
+    // Pawn: White moves 1 cell forward into empty square
+    assert(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
+                    "1000\nprint board") == "wP . .\n. . .\n. . .\n");
+    // Pawn: White cannot move 2 cells forward
+    assert(runInput(" Board:\n. . .\n. . .\nwP . .\nCommands:\nclick 50 250\nclick 50 50\nwait "
+                    "1000\nprint board") == ". . .\n. . .\nwP . .\n");
+    // Pawn: White cannot capture directly forward
+    assert(runInput(" Board:\nbP . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
+                    "1000\nprint board") == "bP . .\nwP . .\n. . .\n");
+    // Pawn: White cannot move diagonally to empty square
+    assert(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
+                    "1000\nprint board") == ". . .\nwP . .\n. . .\n");
+    // Pawn: White captures enemy diagonally
+    assert(runInput(" Board:\n. bP .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
+                    "1000\nprint board") == ". wP .\n. . .\n. . .\n");
+
     return 0;
 }
