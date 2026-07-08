@@ -34,7 +34,9 @@ private:
     void clearSelection();
     bool requestMove(int fromR, int fromC, int toR, int toC, Board& board);
     bool hasArrived(const PendingMove& move) const;
-    void arriveAtDestination(Board& board, const PendingMove& move);
+    static bool pendingMoveLess(const PendingMove& a, const PendingMove& b);
+    void resolveArrival(Board& board, const PendingMove& move,
+                        std::vector<std::pair<int, int>>& arrivedThisTick);
     void processCompletedMoves(Board& board);
 
     long elapsedMs_ = 0;

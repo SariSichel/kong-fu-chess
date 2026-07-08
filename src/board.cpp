@@ -36,6 +36,14 @@ void Board::arrivePiece(int fromR, int fromC, int toR, int toC) {
     grid_[toR][toC].finishMove();
 }
 
+void Board::cancelMoveAt(int fromR, int fromC) {
+    grid_[fromR][fromC].cancelMove();
+}
+
+void Board::removePieceAt(int fromR, int fromC) {
+    grid_[fromR][fromC] = Piece::empty();
+}
+
 int Board::sign(int delta) {
     if (delta > 0) {
         return 1;

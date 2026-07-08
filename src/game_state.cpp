@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <utility>
 
 #include "board.h"
 #include "board_serializer.h"
@@ -15,6 +16,14 @@ long moveDurationMs(int fromR, int fromC, int toR, int toC) {
     const int dc = std::abs(toC - fromC);
     const int distance = std::max(dr, dc);
     return static_cast<long>(distance) * GameConfig::kMoveDurationMs;
+}
+
+bool squareArrivedThisTick(const std::vector<std::pair<int, int>>& arrivedThisTick, int row,
+                           int col) {
+    return std::any_of(arrivedThisTick.begin(), arrivedThisTick.end(),
+                       [row, col](const std::pair<int, int>& square) {
+                           return square.first == row && square.second == col;
+                       });
 }
 
 }  // namespace
@@ -94,20 +103,71 @@ bool GameState::hasArrived(const PendingMove& move) const {
     return elapsedOnMove >= durationMs;
 }
 
-void GameState::arriveAtDestination(Board& board, const PendingMove& move) {
+bool GameState::pendingMoveLess(const PendingMove& a, const PendingMove& b) {
+    if (a.startedAt != b.startedAt) {
+        return a.startedAt < b.startedAt;
+    }
+    if (a.fromR != b.fromR) {
+        return a.fromR < b.fromR;
+    }
+    return a.fromC < b.fromC;
+}
+
+void GameState::resolveArrival(Board& board, const PendingMove& move,
+                              std::vector<std::pair<int, int>>& arrivedThisTick) {
+    if (!board.inBounds(move.fromR, move.fromC)) {
+        return;
+    }
+
+    Piece& mover = board.cell(move.fromR, move.fromC);
+    if (mover.isEmpty() || !mover.isMoving()) {
+        return;
+    }
+
+    const Piece& destination = board.cell(move.toR, move.toC);
+    if (!destination.isEmpty()) {
+        if (destination.isFriendly(mover.color())) {
+            board.cancelMoveAt(move.fromR, move.fromC);
+            return;
+        }
+
+        if (squareArrivedThisTick(arrivedThisTick, move.toR, move.toC)) {
+            board.removePieceAt(move.fromR, move.fromC);
+            return;
+        }
+    }
+
     board.arrivePiece(move.fromR, move.fromC, move.toR, move.toC);
+    arrivedThisTick.push_back({move.toR, move.toC});
 }
 
 void GameState::processCompletedMoves(Board& board) {
-    for (size_t i = 0; i < pendingMoves_.size();) {
-        const PendingMove& move = pendingMoves_[i];
-        if (!hasArrived(move)) {
-            ++i;
-            continue;
-        }
+    std::vector<PendingMove> completingMoves;
+    completingMoves.reserve(pendingMoves_.size());
 
-        arriveAtDestination(board, move);
-        pendingMoves_.erase(pendingMoves_.begin() + static_cast<long>(i));
+    for (const PendingMove& move : pendingMoves_) {
+        if (hasArrived(move)) {
+            completingMoves.push_back(move);
+        }
+    }
+
+    if (completingMoves.empty()) {
+        return;
+    }
+
+    pendingMoves_.erase(std::remove_if(pendingMoves_.begin(), pendingMoves_.end(),
+                                       [this](const PendingMove& move) {
+                                           return hasArrived(move);
+                                       }),
+                        pendingMoves_.end());
+
+    std::sort(completingMoves.begin(), completingMoves.end(), pendingMoveLess);
+
+    std::vector<std::pair<int, int>> arrivedThisTick;
+    arrivedThisTick.reserve(completingMoves.size());
+
+    for (const PendingMove& move : completingMoves) {
+        resolveArrival(board, move, arrivedThisTick);
     }
 }
 

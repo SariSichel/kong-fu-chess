@@ -23,6 +23,8 @@ public:
     Piece& cell(int row, int col);
     void movePiece(int fromR, int fromC, int toR, int toC);
     void arrivePiece(int fromR, int fromC, int toR, int toC);
+    void cancelMoveAt(int fromR, int fromC);
+    void removePieceAt(int fromR, int fromC);
     bool canMove(int fromR, int fromC, int toR, int toC) const;
 
 private:
