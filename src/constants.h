@@ -37,6 +37,7 @@ namespace GameConfig {
 constexpr Color kFriendlyColor = Color::White;
 constexpr int kClickCellSize = 100;
 constexpr int kNoSelection = -1;
+constexpr long kMoveDurationMs = 1000;
 }  // namespace GameConfig
 
 namespace Text {

@@ -57,9 +57,9 @@ int main() {
     assert(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
                     "1000\nprint board") == "wK . .\n. . .\n. . .\n");
 
-    // Rook: legal orthogonal move
+    // Rook: legal orthogonal move (3 cells — needs 3000ms)
     assert(runInput(" Board:\nwR . . .\n. . . .\nCommands:\nclick 50 50\nclick 350 50\nwait "
-                    "1000\nprint board") == ". . . wR\n. . . .\n");
+                    "3000\nprint board") == ". . . wR\n. . . .\n");
     // Rook: illegal diagonal move
     assert(runInput(" Board:\nwR . .\n. . .\nCommands:\nclick 50 50\nclick 150 150\nwait "
                     "1000\nprint board") == "wR . .\n. . .\n");
@@ -67,43 +67,43 @@ int main() {
     assert(runInput(" Board:\nwR wP . .\n. . . .\nCommands:\nclick 50 50\nclick 350 50\nwait "
                     "1000\nprint board") == "wR wP . .\n. . . .\n");
 
-    // Bishop: legal diagonal move
+    // Bishop: legal diagonal move (2 cells — needs 2000ms)
     assert(runInput(" Board:\nwB . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait "
-                    "1000\nprint board") == ". . .\n. . .\n. . wB\n");
+                    "2000\nprint board") == ". . .\n. . .\n. . wB\n");
     // Bishop: illegal orthogonal move
     assert(runInput(" Board:\nwB . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
                     "1000\nprint board") == "wB . .\n. . .\n");
 
-    // Queen: legal rook-like move
+    // Queen: legal rook-like move (3 cells — needs 3000ms)
     assert(runInput(" Board:\nwQ . . .\n. . . .\nCommands:\nclick 50 50\nclick 350 50\nwait "
-                    "1000\nprint board") == ". . . wQ\n. . . .\n");
+                    "3000\nprint board") == ". . . wQ\n. . . .\n");
     // Queen: illegal knight-like move
     assert(runInput(" Board:\nwQ . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 250\nwait "
                     "1000\nprint board") == "wQ . .\n. . .\n. . .\n");
 
-    // Knight: legal L-shaped move
+    // Knight: legal L-shaped move (chebyshev distance 2 — needs 2000ms)
     assert(runInput(" Board:\nwN . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 250\nwait "
-                    "1000\nprint board") == ". . .\n. . .\n. wN .\n");
+                    "2000\nprint board") == ". . .\n. . .\n. wN .\n");
     // Knight: illegal straight two-square move
     assert(runInput(" Board:\nwN . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
                     "1000\nprint board") == "wN . .\n. . .\n");
     // Knight: jumps over blocker on the way
     assert(runInput(" Board:\nwN . wP .\n. . . .\n. . . .\nCommands:\nclick 50 50\nclick 150 "
-                    "250\nwait 1000\nprint board") == ". . wP .\n. . . .\n. wN . .\n");
+                    "250\nwait 2000\nprint board") == ". . wP .\n. . . .\n. wN . .\n");
 
     // Bishop: blocked by intermediate piece
     assert(runInput(" Board:\nwB . .\n. wP .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait "
                     "1000\nprint board") == "wB . .\n. wP .\n. . .\n");
 
-    // Rook: captures enemy on destination
-    assert(runInput(" Board:\nwR . . bP\nCommands:\nclick 50 50\nclick 350 50\nwait 1000\nprint "
+    // Rook: captures enemy on destination (3 cells — needs 3000ms)
+    assert(runInput(" Board:\nwR . . bP\nCommands:\nclick 50 50\nclick 350 50\nwait 3000\nprint "
                     "board") == ". . . wR\n");
     // Rook: cannot move onto friendly piece
     assert(runInput(" Board:\nwR . . wP\nCommands:\nclick 50 50\nclick 350 50\nwait 1000\nprint "
                     "board") == "wR . . wP\n");
-    // Knight: captures enemy on destination
+    // Knight: captures enemy on destination (chebyshev distance 2 — needs 2000ms)
     assert(runInput(" Board:\nwN . .\n. . bP\n. . .\nCommands:\nclick 50 50\nclick 250 150\nwait "
-                    "1000\nprint board") == ". . .\n. . wN\n. . .\n");
+                    "2000\nprint board") == ". . .\n. . wN\n. . .\n");
 
     // Pawn: White moves 1 cell forward into empty square
     assert(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
@@ -120,6 +120,14 @@ int main() {
     // Pawn: White captures enemy diagonally
     assert(runInput(" Board:\n. bP .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
                     "1000\nprint board") == ". wP .\n. . .\n. . .\n");
+
+    // Rook: 2-cell move — still at source before arrival, at destination after
+    assert(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nwait 1000\nprint "
+                    "board\nwait 1000\nprint board") == "wR . .\n. . wR\n");
+    // Bishop: 2-cell diagonal — still at source before arrival, at destination after
+    assert(runInput(" Board:\nwB . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait 1000\n"
+                    "print board\nwait 1000\nprint board") ==
+           "wB . .\n. . .\n. . .\n. . .\n. . .\n. . wB\n");
 
     return 0;
 }

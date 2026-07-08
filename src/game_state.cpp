@@ -1,8 +1,22 @@
 #include "game_state.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "board.h"
 #include "board_serializer.h"
 #include "constants.h"
+
+namespace {
+
+long moveDurationMs(int fromR, int fromC, int toR, int toC) {
+    const int dr = std::abs(toR - fromR);
+    const int dc = std::abs(toC - fromC);
+    const int distance = std::max(dr, dc);
+    return static_cast<long>(distance) * GameConfig::kMoveDurationMs;
+}
+
+}  // namespace
 
 void GameState::reset() {
     elapsedMs_ = 0;
@@ -54,7 +68,8 @@ void GameState::handleClick(Board& board, int x, int y) {
 }
 
 void GameState::requestMove(int fromR, int fromC, int toR, int toC) {
-    pendingMoves_.push_back({fromR, fromC, toR, toC, elapsedMs_});
+    pendingMoves_.push_back(
+        {fromR, fromC, toR, toC, elapsedMs_ + moveDurationMs(fromR, fromC, toR, toC)});
 }
 
 void GameState::processCompletedMoves(Board& board) {
