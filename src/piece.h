@@ -18,7 +18,8 @@ enum class PieceType {
 
 enum class PieceMovementState {
     Idle,
-    Moving
+    Moving,
+    Airborne
 };
 
 class Piece {
@@ -36,6 +37,15 @@ public:
 
     PieceMovementState movementState() const { return movementState_; }
     bool isMoving() const { return movementState_ == PieceMovementState::Moving; }
+    bool isAirborne() const { return movementState_ == PieceMovementState::Airborne; }
+
+    // A piece is "busy" while a timed move or jump is in flight. Busy pieces
+    // can neither start a new move nor start a jump.
+    bool isBusy() const { return isMoving() || isAirborne(); }
+
+    // Jump legality: the piece must exist (a captured piece becomes Empty and
+    // is therefore ineligible) and must be idle (not moving, not already airborne).
+    bool canJump() const { return !isEmpty() && movementState_ == PieceMovementState::Idle; }
 
     int currentRow() const { return currentRow_; }
     int currentCol() const { return currentCol_; }
@@ -59,6 +69,22 @@ public:
     }
 
     void cancelMove() {
+        movementState_ = PieceMovementState::Idle;
+        destinationRow_ = -1;
+        destinationCol_ = -1;
+    }
+
+    // The piece stays on its own cell for the entire jump; it has no destination.
+    void beginJump(int row, int col) {
+        movementState_ = PieceMovementState::Airborne;
+        currentRow_ = row;
+        currentCol_ = col;
+        destinationRow_ = -1;
+        destinationCol_ = -1;
+    }
+
+    // Land in place: back to Idle on the same cell it jumped from.
+    void finishJump() {
         movementState_ = PieceMovementState::Idle;
         destinationRow_ = -1;
         destinationCol_ = -1;

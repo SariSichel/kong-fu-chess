@@ -54,9 +54,11 @@ bool GameState::isActiveMoveStartTick(int fromR, int fromC) const {
 void GameState::reset() {
     elapsedMs_ = 0;
     nextMoveId_ = 0;
+    nextJumpId_ = 0;
     selectedRow_ = GameConfig::kNoSelection;
     selectedCol_ = GameConfig::kNoSelection;
     pendingMoves_.clear();
+    pendingJumps_.clear();
     premoves_.clear();
     gameOver_ = false;
     winner_ = Color::White;
@@ -136,13 +138,29 @@ void GameState::handleClick(Board& board, int x, int y) {
     clearSelection();
 }
 
+void GameState::handleJump(Board& board, int x, int y) {
+    // The jump command uses the same pixel-coordinate convention as click.
+    if (x < 0 || y < 0) {
+        return;
+    }
+
+    const int col = x / GameConfig::kClickCellSize;
+    const int row = y / GameConfig::kClickCellSize;
+
+    // Initiating a jump clears any pending selection.
+    if (requestJump(row, col, board)) {
+        clearSelection();
+    }
+}
+
 bool GameState::requestMove(int fromR, int fromC, int toR, int toC, Board& board) {
     if (gameOver_) {
         return false;
     }
 
     Piece& piece = board.cell(fromR, fromC);
-    if (piece.isMoving()) {
+    // Both moving and airborne pieces are "busy" and cannot start a new move.
+    if (piece.isBusy()) {
         return false;
     }
 
@@ -150,6 +168,28 @@ bool GameState::requestMove(int fromR, int fromC, int toR, int toC, Board& board
     piece.beginMove(fromR, fromC, toR, toC);
     pendingMoves_.push_back(
         {fromR, fromC, toR, toC, elapsedMs_, elapsedMs_ + durationMs, nextMoveId_++});
+    return true;
+}
+
+bool GameState::requestJump(int row, int col, Board& board) {
+    if (gameOver_) {
+        return false;
+    }
+
+    if (!board.inBounds(row, col)) {
+        return false;
+    }
+
+    Piece& piece = board.cell(row, col);
+    // canJump() rejects empty (captured) pieces and anything not currently idle
+    // (already moving or already airborne).
+    if (!piece.canJump()) {
+        return false;
+    }
+
+    piece.beginJump(row, col);
+    pendingJumps_.push_back(
+        {row, col, elapsedMs_, elapsedMs_ + GameConfig::kJumpDurationMs, nextJumpId_++});
     return true;
 }
 
@@ -205,8 +245,25 @@ void GameState::resolveArrival(Board& board, const PendingMove& move,
     const Piece& destination = board.cell(move.toR, move.toC);
     if (!destination.isEmpty()) {
         if (destination.isFriendly(mover.color())) {
+            // Includes the case where the ally on the square is airborne: a
+            // friendly move already in flight is canceled and the mover stays put.
             board.cancelMoveAt(move.fromR, move.fromC);
             clearPremoveAt(move.fromR, move.fromC);
+            return;
+        }
+
+        // An airborne enemy captures the arriving piece: the mover is destroyed,
+        // the airborne piece stays on its cell, and its jump keeps running until
+        // the timer expires (handled by processCompletedJumps).
+        if (destination.isAirborne()) {
+            const bool moverIsKing = mover.type() == PieceType::King;
+            const Color defenderColor = destination.color();
+            board.removePieceAt(move.fromR, move.fromC);
+            clearPremoveAt(move.fromR, move.fromC);
+            if (moverIsKing) {
+                gameOver_ = true;
+                winner_ = defenderColor;
+            }
             return;
         }
 
@@ -269,12 +326,51 @@ void GameState::processCompletedMoves(Board& board) {
     }
 }
 
+void GameState::processCompletedJumps(Board& board) {
+    if (pendingJumps_.empty()) {
+        return;
+    }
+
+    std::vector<PendingJump> completed;
+    completed.reserve(pendingJumps_.size());
+    for (const PendingJump& jump : pendingJumps_) {
+        if (elapsedMs_ >= jump.finishAt) {
+            completed.push_back(jump);
+        }
+    }
+
+    if (completed.empty()) {
+        return;
+    }
+
+    pendingJumps_.erase(std::remove_if(pendingJumps_.begin(), pendingJumps_.end(),
+                                       [this](const PendingJump& jump) {
+                                           return elapsedMs_ >= jump.finishAt;
+                                       }),
+                        pendingJumps_.end());
+
+    for (const PendingJump& jump : completed) {
+        if (!board.inBounds(jump.row, jump.col)) {
+            continue;
+        }
+        Piece& piece = board.cell(jump.row, jump.col);
+        if (piece.isAirborne()) {
+            piece.finishJump();
+        }
+    }
+}
+
 void GameState::advanceTime(long ms, Board& board) {
     elapsedMs_ += ms;
+    // Resolve arrivals before landing jumps so that an enemy arriving on the exact
+    // tick a jump ends is still met by an airborne defender (inclusive window: the
+    // piece is airborne for the full [start, finish] duration, including finish).
     processCompletedMoves(board);
+    processCompletedJumps(board);
 }
 
 void GameState::printBoard(Board& board, std::ostream& out) {
     processCompletedMoves(board);
+    processCompletedJumps(board);
     BoardSerializer::print(board, out);
 }

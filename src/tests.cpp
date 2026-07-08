@@ -38,6 +38,12 @@ void clickSquare(GameState& state, Board& board, int row, int col) {
     state.handleClick(board, x, y);
 }
 
+void jumpSquare(GameState& state, Board& board, int row, int col) {
+    const int x = col * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
+    const int y = row * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
+    state.handleJump(board, x, y);
+}
+
 bool hasRookAt(const Board& board, int row, int col, Color color = Color::White) {
     const Piece& piece = board.cell(row, col);
     return piece.type() == PieceType::Rook && piece.color() == color;
@@ -894,4 +900,206 @@ TEST_CASE("game over: reset clears game-over flag") {
     state.reset();
 
     CHECK_FALSE(state.isGameOver());
+}
+
+// --- Jump ("Airborne") mechanic tests ---
+
+TEST_CASE("jump: normal landing returns to idle on the same cell") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    GameState state;
+    state.reset();
+
+    jumpSquare(state, board, 0, 0);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+
+    // Still airborne one tick before the timer expires.
+    state.advanceTime(GameConfig::kJumpDurationMs - 1, board);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+
+    state.advanceTime(1, board);
+    CHECK(hasRookAt(board, 0, 0));
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+}
+
+TEST_CASE("jump: airborne piece captures an arriving enemy and stays put") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::Black)});
+    GameState state;
+    state.reset();
+
+    // Black rook starts at t=0 heading for (0,0); a 3-cell trip arrives at t=3000.
+    clickSquare(state, board, 0, 3);
+    clickSquare(state, board, 0, 0);
+    CHECK(isPieceMovingAt(board, 0, 3));
+
+    // Jump at t=2500 so the white rook is airborne across the 3000ms arrival.
+    state.advanceTime(2500, board);
+    jumpSquare(state, board, 0, 0);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+
+    // At t=3000 the enemy arrives while the defender is still airborne.
+    state.advanceTime(500, board);
+    CHECK(hasRookAt(board, 0, 0, Color::White));
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    CHECK_FALSE(hasRookAt(board, 0, 3, Color::Black));
+    CHECK(board.cell(0, 3).isEmpty());
+
+    // The jump keeps running to its full duration, then lands in place.
+    state.advanceTime(500, board);
+    CHECK(hasRookAt(board, 0, 0, Color::White));
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+}
+
+TEST_CASE("jump: friendly move in flight toward an airborne ally is cancelled") {
+    // Layout: . wK . wR  -> king at (0,1), rook at (0,3), target square X = (0,2).
+    Board board;
+    board.addRow({Piece::empty(), Piece(PieceType::King, Color::White), Piece::empty(),
+                  Piece(PieceType::Rook, Color::White)});
+    GameState state;
+    state.reset();
+
+    // King heads to the empty target X and arrives at t=1000.
+    clickSquare(state, board, 0, 1);
+    clickSquare(state, board, 0, 2);
+
+    // At t=500, launch the rook toward X while X is still empty (arrives t=1500).
+    state.advanceTime(500, board);
+    clickSquare(state, board, 0, 3);
+    clickSquare(state, board, 0, 2);
+    CHECK(isPieceMovingAt(board, 0, 3));
+
+    // At t=1000 the king lands on X, then immediately jumps (airborne 1000..2000).
+    state.advanceTime(500, board);
+    CHECK(hasPieceAt(board, 0, 2, PieceType::King, Color::White));
+    jumpSquare(state, board, 0, 2);
+    CHECK(movementStateAt(board, 0, 2) == PieceMovementState::Airborne);
+
+    // At t=1500 the friendly rook arrives at X while the ally is airborne: the
+    // move is cancelled and the rook remains on its origin cell.
+    state.advanceTime(500, board);
+    CHECK(hasRookAt(board, 0, 3, Color::White));
+    CHECK(movementStateAt(board, 0, 3) == PieceMovementState::Idle);
+    CHECK(hasPieceAt(board, 0, 2, PieceType::King, Color::White));
+    CHECK(movementStateAt(board, 0, 2) == PieceMovementState::Airborne);
+}
+
+TEST_CASE("jump: a moving piece cannot initiate a jump") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    GameState state;
+    state.reset();
+
+    clickSquare(state, board, 0, 0);
+    clickSquare(state, board, 0, 2);
+    CHECK(isPieceMovingAt(board, 0, 0));
+
+    // Jump request must be rejected: the piece stays Moving, not Airborne.
+    jumpSquare(state, board, 0, 0);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Moving);
+
+    // The original move still completes normally.
+    state.advanceTime(moveDurationMs(0, 0, 0, 2), board);
+    CHECK(hasRookAt(board, 0, 2));
+    CHECK(movementStateAt(board, 0, 2) == PieceMovementState::Idle);
+}
+
+TEST_CASE("jump: an empty (captured) cell cannot initiate a jump") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    GameState state;
+    state.reset();
+
+    // An empty square models a captured/absent piece: nothing should happen.
+    jumpSquare(state, board, 0, 1);
+    CHECK(board.cell(0, 1).isEmpty());
+    CHECK(movementStateAt(board, 0, 1) == PieceMovementState::Idle);
+}
+
+TEST_CASE("jump: an airborne piece cannot move") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    GameState state;
+    state.reset();
+
+    jumpSquare(state, board, 0, 0);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+
+    // Attempting to move the airborne piece must be rejected.
+    clickSquare(state, board, 0, 0);
+    clickSquare(state, board, 0, 2);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    CHECK(board.cell(0, 2).isEmpty());
+
+    // It simply lands in place when the timer expires.
+    state.advanceTime(GameConfig::kJumpDurationMs, board);
+    CHECK(hasRookAt(board, 0, 0));
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+}
+
+TEST_CASE("jump: cannot start a second jump while already airborne") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    GameState state;
+    state.reset();
+
+    jumpSquare(state, board, 0, 0);  // airborne 0..1000
+
+    // Halfway through, a second jump request must be ignored (does not extend it).
+    state.advanceTime(500, board);
+    jumpSquare(state, board, 0, 0);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+
+    // If the second jump had registered (500..1500) the piece would still be
+    // airborne at t=1000; instead the original jump lands exactly on time.
+    state.advanceTime(500, board);
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+    CHECK(hasRookAt(board, 0, 0));
+}
+
+TEST_CASE("jump: enemy arriving exactly at the boundary tick is jump-captured") {
+    // Inclusive window: the piece is airborne for the full [start, finish]
+    // duration, so an enemy arriving on the exact finish tick is still captured.
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece(PieceType::Rook, Color::Black),
+                  Piece::empty(), Piece::empty()});
+    GameState state;
+    state.reset();
+
+    jumpSquare(state, board, 0, 0);  // white airborne 0..1000
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+
+    // Black rook (0,1) -> (0,0) is a 1-cell trip, arriving exactly at t=1000.
+    clickSquare(state, board, 0, 1);
+    clickSquare(state, board, 0, 0);
+    CHECK(isPieceMovingAt(board, 0, 1));
+
+    state.advanceTime(GameConfig::kJumpDurationMs, board);
+
+    // The airborne white rook captured the arriving black rook, then landed.
+    CHECK(hasRookAt(board, 0, 0, Color::White));
+    CHECK_FALSE(hasRookAt(board, 0, 0, Color::Black));
+    CHECK(board.cell(0, 1).isEmpty());
+    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+}
+
+TEST_CASE("jump: command uses pixel coordinates like click") {
+    // 'jump 50 150' -> x=50 (col 0), y=150 (row 1): the white king jumps in place
+    // and captures the black rook that arrives on the exact boundary tick.
+    CHECK(runInput(" Board:\n. . .\nwK bR .\n. . .\nCommands:\njump 50 150\nclick 150 150\n"
+                   "click 50 150\nwait 1000\nprint board") == ". . .\nwK . .\n. . .\n");
+}
+
+TEST_CASE("jump: command integration via the command processor") {
+    // Black rook races 3 cells toward the white rook (arrives t=3000); the white
+    // rook jumps at t=2500 and destroys the arriving enemy while airborne.
+    CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 350 50\nclick 50 50\nwait 2500\n"
+                   "jump 50 50\nwait 500\nprint board\nwait 500\nprint board") ==
+          "wR . . .\nwR . . .\n");
 }

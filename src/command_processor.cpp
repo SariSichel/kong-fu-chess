@@ -40,6 +40,12 @@ void processLine(const std::string& line, std::ostream& out, Board& board, GameS
         if (ss >> x >> y) {
             state.handleClick(board, x, y);
         }
+    } else if (cmd == Commands::kJump) {
+        int x = 0;
+        int y = 0;
+        if (ss >> x >> y) {
+            state.handleJump(board, x, y);
+        }
     } else if (cmd == Commands::kWait) {
         long ms = 0;
         if (ss >> ms) {

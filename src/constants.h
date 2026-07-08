@@ -23,6 +23,7 @@ constexpr const char* kCommandsSection = "Commands:";
 
 namespace Commands {
 constexpr const char* kClick = "click";
+constexpr const char* kJump = "jump";
 constexpr const char* kWait = "wait";
 constexpr const char* kPrint = "print";
 constexpr const char* kPrintBoard = "board";
@@ -38,6 +39,7 @@ constexpr Color kFriendlyColor = Color::White;
 constexpr int kClickCellSize = 100;
 constexpr int kNoSelection = -1;
 constexpr long kMoveDurationMs = 1000;
+constexpr long kJumpDurationMs = 1000;
 }  // namespace GameConfig
 
 namespace Text {
