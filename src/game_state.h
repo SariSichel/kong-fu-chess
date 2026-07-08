@@ -17,10 +17,10 @@ public:
 
     void handleClick(Board& board, int x, int y);
     void handleJump(Board& board, int x, int y);
-    void advanceTime(long ms, Board& board);
+    void advanceTime(std::int64_t ms, Board& board);
     void printBoard(Board& board, std::ostream& out);
 
-    long elapsedMs() const { return elapsedMs_; }
+    std::int64_t elapsedMs() const { return elapsedMs_; }
     bool hasSelection() const { return selectedRow_ >= 0; }
     int selectedRow() const { return selectedRow_; }
     int selectedCol() const { return selectedCol_; }
@@ -41,16 +41,16 @@ private:
         int fromC;
         int toR;
         int toC;
-        long startedAt;
-        long finishAt;
+        std::int64_t startedAt;
+        std::int64_t finishAt;
         uint64_t moveId;
     };
 
     struct PendingJump {
         int row;
         int col;
-        long startedAt;
-        long finishAt;
+        std::int64_t startedAt;
+        std::int64_t finishAt;
         uint64_t jumpId;
     };
 
@@ -69,7 +69,7 @@ private:
     void processCompletedMoves(Board& board);
     void processCompletedJumps(Board& board);
 
-    long elapsedMs_ = 0;
+    std::int64_t elapsedMs_ = 0;
     uint64_t nextMoveId_ = 0;
     uint64_t nextJumpId_ = 0;
     int selectedRow_ = GameConfig::kNoSelection;

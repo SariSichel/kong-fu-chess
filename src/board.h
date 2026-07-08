@@ -1,7 +1,6 @@
 #ifndef BOARD_H
 #define BOARD_H
 
-#include <iosfwd>
 #include <vector>
 
 #include "piece.h"
@@ -9,8 +8,6 @@
 class Board {
 public:
     Board() = default;
-
-    static int run(std::istream& in, std::ostream& out);
 
     void clear();
     void addRow(std::vector<Piece> row);

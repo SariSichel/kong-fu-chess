@@ -4,10 +4,12 @@
 #include <sstream>
 #include <string>
 
+#include <cstdint>
 #include <cstdlib>
 
 #include "board.h"
 #include "board_serializer.h"
+#include "command_processor.h"
 #include "constants.h"
 #include "game_state.h"
 
@@ -21,7 +23,7 @@ ParseResult parseInput(const std::string& input, Board& board) {
 std::string runInput(const std::string& input) {
     std::istringstream in(input);
     std::ostringstream out;
-    Board::run(in, out);
+    CommandProcessor::run(in, out);
     return out.str();
 }
 
@@ -54,11 +56,11 @@ bool hasPieceAt(const Board& board, int row, int col, PieceType type, Color colo
     return piece.type() == type && piece.color() == color;
 }
 
-long moveDurationMs(int fromR, int fromC, int toR, int toC) {
+std::int64_t moveDurationMs(int fromR, int fromC, int toR, int toC) {
     const int dr = std::abs(toR - fromR);
     const int dc = std::abs(toC - fromC);
     const int distance = std::max(dr, dc);
-    return static_cast<long>(distance) * GameConfig::kMoveDurationMs;
+    return static_cast<std::int64_t>(distance) * GameConfig::kMoveDurationMs;
 }
 
 Board makeEnemyCollisionBoard() {
@@ -146,8 +148,8 @@ constexpr int kSquareB_C = 2;
 constexpr int kSquareC_R = 0;
 constexpr int kSquareC_C = 3;
 
-constexpr long kMoveAToBDurationMs = 2 * GameConfig::kMoveDurationMs;
-constexpr long kMoveBToCDurationMs = 1 * GameConfig::kMoveDurationMs;
+constexpr std::int64_t kMoveAToBDurationMs = 2 * GameConfig::kMoveDurationMs;
+constexpr std::int64_t kMoveBToCDurationMs = 1 * GameConfig::kMoveDurationMs;
 
 }  // namespace
 
@@ -517,7 +519,7 @@ TEST_CASE("test_enemy_collision_black_started_first") {
     constexpr int kBlackC = 3;
     constexpr int kDestR = 0;
     constexpr int kDestC = 3;
-    const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
+    const std::int64_t kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
     clickSquare(state, board, kBlackR, kBlackC);
     clickSquare(state, board, kDestR, kDestC);
@@ -544,7 +546,7 @@ TEST_CASE("test_enemy_collision_white_started_first") {
     constexpr int kBlackC = 3;
     constexpr int kDestR = 0;
     constexpr int kDestC = 3;
-    const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
+    const std::int64_t kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
     clickSquare(state, board, kWhiteR, kWhiteC);
     clickSquare(state, board, kDestR, kDestC);
@@ -571,7 +573,7 @@ TEST_CASE("test_enemy_collision_absolute_tie") {
     constexpr int kBlackC = 3;
     constexpr int kDestR = 0;
     constexpr int kDestC = 3;
-    const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
+    const std::int64_t kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
     clickSquare(state, board, kBlackR, kBlackC);
     clickSquare(state, board, kDestR, kDestC);
@@ -627,8 +629,8 @@ TEST_CASE("test_premove_cancelled_when_target_blocked") {
     constexpr int kSquareC_C = 3;
     constexpr int kKingR = 1;
     constexpr int kKingC = 3;
-    const long kRookToBMs = moveDurationMs(kRookR, kRookC, kSquareB_R, kSquareB_C);
-    const long kKingToCMs = moveDurationMs(kKingR, kKingC, kSquareC_R, kSquareC_C);
+    const std::int64_t kRookToBMs = moveDurationMs(kRookR, kRookC, kSquareB_R, kSquareB_C);
+    const std::int64_t kKingToCMs = moveDurationMs(kKingR, kKingC, kSquareC_R, kSquareC_C);
 
     clickSquare(state, board, kRookR, kRookC);
     clickSquare(state, board, kSquareB_R, kSquareB_C);
@@ -664,8 +666,8 @@ TEST_CASE("test_friendly_landing_blocked_at_arrival") {
     constexpr int kKingC = 1;
     constexpr int kTargetR = 0;
     constexpr int kTargetC = 2;
-    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
-    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
+    const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
+    const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
     clickSquare(state, board, kRookR, kRookC);
     clickSquare(state, board, kTargetR, kTargetC);
@@ -694,8 +696,8 @@ TEST_CASE("test_arrival_processing_order_by_started_at") {
     constexpr int kKingC = 2;
     constexpr int kTargetR = 0;
     constexpr int kTargetC = 2;
-    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
-    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
+    const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
+    const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
     clickSquare(state, board, kRookR, kRookC);
     clickSquare(state, board, kTargetR, kTargetC);
@@ -724,7 +726,7 @@ TEST_CASE("game over: basic king capture ends the game") {
     constexpr int kRookC = 0;
     constexpr int kKingR = 0;
     constexpr int kKingC = 3;
-    const long kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+    const std::int64_t kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
 
     CHECK_FALSE(state.isGameOver());
 
@@ -754,7 +756,7 @@ TEST_CASE("game over: moves are ignored after king capture") {
     constexpr int kKnightC = 1;
     constexpr int kKnightDestR = 1;
     constexpr int kKnightDestC = 2;
-    const long kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+    const std::int64_t kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
 
     clickSquare(state, board, kRookR, kRookC);
     clickSquare(state, board, kKingR, kKingC);
@@ -789,8 +791,8 @@ TEST_CASE("game over: friendly collision on own king does not end game") {
     constexpr int kKingC = 1;
     constexpr int kTargetR = 0;
     constexpr int kTargetC = 2;
-    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
-    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
+    const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
+    const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
     CHECK_FALSE(state.isGameOver());
 
@@ -821,8 +823,8 @@ TEST_CASE("game over: simultaneous arrival tie does not capture the king") {
     constexpr int kKingC = 2;
     constexpr int kTargetR = 0;
     constexpr int kTargetC = 2;
-    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
-    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
+    const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
+    const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
     CHECK_FALSE(state.isGameOver());
 
@@ -856,8 +858,8 @@ TEST_CASE("game over: king steps away before attacker arrives") {
     constexpr int kKingC = 2;
     constexpr int kKingDestR = 0;
     constexpr int kKingDestC = 3;
-    const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
-    const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kKingDestR, kKingDestC);
+    const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+    const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kKingDestR, kKingDestC);
 
     CHECK_FALSE(state.isGameOver());
 
@@ -889,7 +891,7 @@ TEST_CASE("game over: reset clears game-over flag") {
     constexpr int kRookC = 0;
     constexpr int kKingR = 0;
     constexpr int kKingC = 3;
-    const long kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
+    const std::int64_t kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
 
     clickSquare(state, board, kRookR, kRookC);
     clickSquare(state, board, kKingR, kKingC);

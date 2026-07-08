@@ -1,6 +1,8 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
+#include <cstdint>
+
 #include "piece.h"
 
 namespace BoardTokens {
@@ -38,8 +40,8 @@ namespace GameConfig {
 constexpr Color kFriendlyColor = Color::White;
 constexpr int kClickCellSize = 100;
 constexpr int kNoSelection = -1;
-constexpr long kMoveDurationMs = 1000;
-constexpr long kJumpDurationMs = 1000;
+constexpr std::int64_t kMoveDurationMs = 1000;
+constexpr std::int64_t kJumpDurationMs = 1000;
 }  // namespace GameConfig
 
 namespace Text {

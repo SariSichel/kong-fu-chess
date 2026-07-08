@@ -2,8 +2,6 @@
 
 #include <cstdlib>
 
-#include "command_processor.h"
-
 void Board::clear() {
     grid_.clear();
 }
@@ -185,8 +183,4 @@ bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
     }
 
     return true;
-}
-
-int Board::run(std::istream& in, std::ostream& out) {
-    return CommandProcessor::run(in, out);
 }

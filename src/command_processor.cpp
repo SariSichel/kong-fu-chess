@@ -1,5 +1,6 @@
 #include "command_processor.h"
 
+#include <cstdint>
 #include <sstream>
 
 #include "board.h"
@@ -47,7 +48,7 @@ void processLine(const std::string& line, std::ostream& out, Board& board, GameS
             state.handleJump(board, x, y);
         }
     } else if (cmd == Commands::kWait) {
-        long ms = 0;
+        std::int64_t ms = 0;
         if (ss >> ms) {
             state.advanceTime(ms, board);
         }

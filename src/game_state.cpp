@@ -11,11 +11,11 @@
 
 namespace {
 
-long moveDurationMs(int fromR, int fromC, int toR, int toC) {
+std::int64_t moveDurationMs(int fromR, int fromC, int toR, int toC) {
     const int dr = std::abs(toR - fromR);
     const int dc = std::abs(toC - fromC);
     const int distance = std::max(dr, dc);
-    return static_cast<long>(distance) * GameConfig::kMoveDurationMs;
+    return static_cast<std::int64_t>(distance) * GameConfig::kMoveDurationMs;
 }
 
 bool squareArrivedThisTick(const std::vector<std::pair<int, int>>& arrivedThisTick, int row,
@@ -164,7 +164,7 @@ bool GameState::requestMove(int fromR, int fromC, int toR, int toC, Board& board
         return false;
     }
 
-    const long durationMs = moveDurationMs(fromR, fromC, toR, toC);
+    const std::int64_t durationMs = moveDurationMs(fromR, fromC, toR, toC);
     piece.beginMove(fromR, fromC, toR, toC);
     pendingMoves_.push_back(
         {fromR, fromC, toR, toC, elapsedMs_, elapsedMs_ + durationMs, nextMoveId_++});
@@ -194,12 +194,12 @@ bool GameState::requestJump(int row, int col, Board& board) {
 }
 
 bool GameState::hasArrived(const PendingMove& move) const {
-    const long durationMs = move.finishAt - move.startedAt;
+    const std::int64_t durationMs = move.finishAt - move.startedAt;
     if (durationMs <= 0) {
         return true;
     }
 
-    const long elapsedOnMove = elapsedMs_ - move.startedAt;
+    const std::int64_t elapsedOnMove = elapsedMs_ - move.startedAt;
     return elapsedOnMove >= durationMs;
 }
 
@@ -360,7 +360,7 @@ void GameState::processCompletedJumps(Board& board) {
     }
 }
 
-void GameState::advanceTime(long ms, Board& board) {
+void GameState::advanceTime(std::int64_t ms, Board& board) {
     elapsedMs_ += ms;
     // Resolve arrivals before landing jumps so that an enemy arriving on the exact
     // tick a jump ends is still met by an airborne defender (inclusive window: the

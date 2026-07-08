@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "board.h"
+#include "command_processor.h"
 
 int main() {
-    return Board::run(std::cin, std::cout);
+    return CommandProcessor::run(std::cin, std::cout);
 }
