@@ -24,6 +24,7 @@ public:
     bool canMove(int fromR, int fromC, int toR, int toC) const;
 
 private:
+    //move direction
     static int sign(int delta);
 
     bool isPathClear(int fromR, int fromC, int toR, int toC) const;

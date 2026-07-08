@@ -91,27 +91,48 @@ bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
         return false;
     }
 
+    if (!inBounds(fromR, fromC) || !inBounds(toR, toC)) {
+        return false;
+    }
+
     const Piece& piece = cell(fromR, fromC);
     if (piece.isEmpty()) {
         return false;
     }
 
+    bool movementOk = false;
     switch (piece.type()) {
         case PieceType::King:
-            return canKingMove(fromR, fromC, toR, toC);
+            movementOk = canKingMove(fromR, fromC, toR, toC);
+            break;
         case PieceType::Rook:
-            return canRookMove(fromR, fromC, toR, toC);
+            movementOk = canRookMove(fromR, fromC, toR, toC);
+            break;
         case PieceType::Bishop:
-            return canBishopMove(fromR, fromC, toR, toC);
+            movementOk = canBishopMove(fromR, fromC, toR, toC);
+            break;
         case PieceType::Queen:
-            return canQueenMove(fromR, fromC, toR, toC);
+            movementOk = canQueenMove(fromR, fromC, toR, toC);
+            break;
         case PieceType::Knight:
-            return canKnightMove(fromR, fromC, toR, toC);
+            movementOk = canKnightMove(fromR, fromC, toR, toC);
+            break;
         case PieceType::Pawn:
         case PieceType::Empty:
         default:
             return false;
     }
+
+    if (!movementOk) {
+        return false;
+    }
+
+    const Piece& destination = cell(toR, toC);
+    if (!destination.isEmpty() && destination.isFriendly(piece.color())) {
+        return false;
+    }
+
+    return true;
 }
 
 int Board::run(std::istream& in, std::ostream& out) {

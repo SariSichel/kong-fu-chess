@@ -87,6 +87,23 @@ int main() {
     // Knight: illegal straight two-square move
     assert(runInput(" Board:\nwN . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
                     "1000\nprint board") == "wN . .\n. . .\n");
+    // Knight: jumps over blocker on the way
+    assert(runInput(" Board:\nwN . wP .\n. . . .\n. . . .\nCommands:\nclick 50 50\nclick 150 "
+                    "250\nwait 1000\nprint board") == ". . wP .\n. . . .\n. wN . .\n");
+
+    // Bishop: blocked by intermediate piece
+    assert(runInput(" Board:\nwB . .\n. wP .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait "
+                    "1000\nprint board") == "wB . .\n. wP .\n. . .\n");
+
+    // Rook: captures enemy on destination
+    assert(runInput(" Board:\nwR . . bP\nCommands:\nclick 50 50\nclick 350 50\nwait 1000\nprint "
+                    "board") == ". . . wR\n");
+    // Rook: cannot move onto friendly piece
+    assert(runInput(" Board:\nwR . . wP\nCommands:\nclick 50 50\nclick 350 50\nwait 1000\nprint "
+                    "board") == "wR . . wP\n");
+    // Knight: captures enemy on destination
+    assert(runInput(" Board:\nwN . .\n. . bP\n. . .\nCommands:\nclick 50 50\nclick 250 150\nwait "
+                    "1000\nprint board") == ". . .\n. . wN\n. . .\n");
 
     return 0;
 }
