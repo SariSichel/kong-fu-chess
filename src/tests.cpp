@@ -129,5 +129,24 @@ int main() {
                     "print board\nwait 1000\nprint board") ==
            "wB . .\n. . .\n. . .\n. . .\n. . .\n. . wB\n");
 
+    // --- Architecture-review gap tests (TDD — expected to fail until logic is fixed) ---
+
+    // Gap 1: first selection must ignore enemy pieces (only friendly/white may be selected).
+    // Current bug: handleClick selects any non-empty cell on the first click, so bK moves.
+    assert(runInput(" Board:\nbK . wK\n. . .\nCommands:\nclick 50 50\nclick 150 150\nwait "
+                    "1000\nprint board") == "bK . wK\n. . .\n");
+
+    // Gap 2: two pending moves with independent finish times must complete separately.
+    // Rook (0,0)->(0,2) needs 2000ms; king (1,0)->(1,1) needs 1000ms.
+    // After 1000ms only the king arrives; rook stays at source until 2000ms total.
+    assert(runInput(" Board:\nwR . .\nwK . .\nCommands:\nclick 50 50\nclick 250 50\nclick 50 "
+                    "150\nclick 150 150\nwait 1000\nprint board\nwait 1000\nprint board") ==
+           "wR . .\n. wK .\n. . wR\n. wK .\n");
+
+    // Gap 3: print immediately after queuing a move (no wait) must show the settled board
+    // with the piece still at its source — in-flight moves must not appear at destination.
+    assert(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nprint board") ==
+           "wR . .\n");
+
     return 0;
 }

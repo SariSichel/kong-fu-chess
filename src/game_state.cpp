@@ -45,7 +45,7 @@ void GameState::handleClick(Board& board, int x, int y) {
     const Piece& piece = board.cell(row, col);
 
     if (!hasSelection()) {
-        if (piece.isEmpty()) {
+        if (piece.isEmpty() || !piece.isFriendly(GameConfig::kFriendlyColor)) {
             return;
         }
         selectedRow_ = row;
