@@ -61,7 +61,6 @@ void GameState::reset() {
     pendingJumps_.clear();
     premoves_.clear();
     gameOver_ = false;
-    winner_ = Color::White;
 }
 
 void GameState::clearSelection() {
@@ -257,12 +256,10 @@ void GameState::resolveArrival(Board& board, const PendingMove& move,
         // the timer expires (handled by processCompletedJumps).
         if (destination.isAirborne()) {
             const bool moverIsKing = mover.type() == PieceType::King;
-            const Color defenderColor = destination.color();
             board.removePieceAt(move.fromR, move.fromC);
             clearPremoveAt(move.fromR, move.fromC);
             if (moverIsKing) {
                 gameOver_ = true;
-                winner_ = defenderColor;
             }
             return;
         }
@@ -278,7 +275,6 @@ void GameState::resolveArrival(Board& board, const PendingMove& move,
                               !destination.isFriendly(mover.color());
     if (capturedKing) {
         gameOver_ = true;
-        winner_ = mover.color();
     }
 
     board.arrivePiece(move.fromR, move.fromC, move.toR, move.toC);

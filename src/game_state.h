@@ -78,7 +78,6 @@ private:
     std::vector<PendingJump> pendingJumps_;
     std::map<std::pair<int, int>, Premove> premoves_;
     bool gameOver_ = false;
-    Color winner_ = Color::White;
 };
 
 #endif
