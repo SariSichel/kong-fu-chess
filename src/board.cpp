@@ -4,31 +4,30 @@
 #include <sstream>
 
 #include "command_processor.h"
+#include "constants.h"
 
 std::string Board::trimLine(const std::string& line) {
-    const size_t start = line.find_first_not_of(" \t\r\n");
+    const size_t start = line.find_first_not_of(Text::kWhitespace);
     if (start == std::string::npos) {
         return "";
     }
-    const size_t end = line.find_last_not_of(" \t\r\n");
+    const size_t end = line.find_last_not_of(Text::kWhitespace);
     return line.substr(start, end - start + 1);
 }
 
 bool Board::isValidToken(const std::string& token) {
-    if (token == ".") {
+    if (token.length() == 1 && token[0] == BoardTokens::kEmpty) {
         return true;
     }
     if (token.length() == 2) {
-        const std::string colors = "wb";
-        const std::string pieces = "KQRBNP";
-        return colors.find(token[0]) != std::string::npos &&
-               pieces.find(token[1]) != std::string::npos;
+        return std::string(BoardTokens::kColors).find(token[0]) != std::string::npos &&
+               std::string(BoardTokens::kPieceTypes).find(token[1]) != std::string::npos;
     }
     return false;
 }
 
 bool Board::isEmpty(const std::string& token) {
-    return token == ".";
+    return token.length() == 1 && token[0] == BoardTokens::kEmpty;
 }
 
 bool Board::isFriendly(const std::string& token, char friendlyColor) {
@@ -46,7 +45,7 @@ const std::string& Board::cell(int row, int col) const {
 
 void Board::movePiece(int fromR, int fromC, int toR, int toC) {
     grid_[toR][toC] = grid_[fromR][fromC];
-    grid_[fromR][fromC] = ".";
+    grid_[fromR][fromC] = std::string(1, BoardTokens::kEmpty);
 }
 
 int Board::sign(int delta) {
@@ -120,17 +119,17 @@ bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
     }
 
     switch (piece[1]) {
-        case 'K':
+        case BoardTokens::kKing:
             return canKingMove(fromR, fromC, toR, toC);
-        case 'R':
+        case BoardTokens::kRook:
             return canRookMove(fromR, fromC, toR, toC);
-        case 'B':
+        case BoardTokens::kBishop:
             return canBishopMove(fromR, fromC, toR, toC);
-        case 'Q':
+        case BoardTokens::kQueen:
             return canQueenMove(fromR, fromC, toR, toC);
-        case 'N':
+        case BoardTokens::kKnight:
             return canKnightMove(fromR, fromC, toR, toC);
-        case 'P':
+        case BoardTokens::kPawn:
         default:
             return false;
     }
@@ -144,11 +143,11 @@ ParseResult Board::parseFromInput(std::istream& in, Board& board) {
     while (std::getline(in, line)) {
         line = trimLine(line);
 
-        if (line == "Board:") {
+        if (line == InputMarkers::kBoardSection) {
             isParsingBoard = true;
             continue;
         }
-        if (line == "Commands:") {
+        if (line == InputMarkers::kCommandsSection) {
             isParsingBoard = false;
             break;
         }

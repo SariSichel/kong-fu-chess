@@ -4,6 +4,8 @@
 #include <iosfwd>
 #include <vector>
 
+#include "constants.h"
+
 class Board;
 
 class GameState {
@@ -28,15 +30,13 @@ private:
         long finishAt;
     };
 
-    static const char kFriendlyColor;
-
     void clearSelection();
     void requestMove(int fromR, int fromC, int toR, int toC);
     void processCompletedMoves(Board& board);
 
     long elapsedMs_ = 0;
-    int selectedRow_ = -1;
-    int selectedCol_ = -1;
+    int selectedRow_ = GameConfig::kNoSelection;
+    int selectedCol_ = GameConfig::kNoSelection;
     std::vector<PendingMove> pendingMoves_;
 };
 

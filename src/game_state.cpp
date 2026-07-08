@@ -1,19 +1,18 @@
 #include "game_state.h"
 
 #include "board.h"
-
-const char GameState::kFriendlyColor = 'w';
+#include "constants.h"
 
 void GameState::reset() {
     elapsedMs_ = 0;
-    selectedRow_ = -1;
-    selectedCol_ = -1;
+    selectedRow_ = GameConfig::kNoSelection;
+    selectedCol_ = GameConfig::kNoSelection;
     pendingMoves_.clear();
 }
 
 void GameState::clearSelection() {
-    selectedRow_ = -1;
-    selectedCol_ = -1;
+    selectedRow_ = GameConfig::kNoSelection;
+    selectedCol_ = GameConfig::kNoSelection;
 }
 
 void GameState::handleClick(Board& board, int x, int y) {
@@ -21,8 +20,8 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
-    const int col = x / 100;
-    const int row = y / 100;
+    const int col = x / GameConfig::kClickCellSize;
+    const int row = y / GameConfig::kClickCellSize;
 
     if (!board.inBounds(row, col)) {
         return;
@@ -39,7 +38,7 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
-    if (!Board::isEmpty(cell) && Board::isFriendly(cell, kFriendlyColor)) {
+    if (!Board::isEmpty(cell) && Board::isFriendly(cell, GameConfig::kFriendlyColor)) {
         selectedRow_ = row;
         selectedCol_ = col;
         return;
