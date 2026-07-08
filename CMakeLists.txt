@@ -22,6 +22,8 @@ add_executable(board_tests
     ${KONG_FU_CHESS_SOURCES}
 )
 
+target_include_directories(board_tests PRIVATE src)
+
 if(MSVC)
     target_compile_options(kong_fu_chess PRIVATE /W4)
     target_compile_options(board_tests PRIVATE /W4)
