@@ -9,11 +9,7 @@
 #include "board.h"
 #include "board_serializer.h"
 #include "constants.h"
-
-// Test-only access to GameState internals (e.g. requestMove for enemy pieces).
-#define private public
 #include "game_state.h"
-#undef private
 
 namespace {
 
@@ -59,33 +55,14 @@ long moveDurationMs(int fromR, int fromC, int toR, int toC) {
     return static_cast<long>(distance) * GameConfig::kMoveDurationMs;
 }
 
-void requestMoveDirect(GameState& state, Board& board, int fromR, int fromC, int toR,
-                       int toC) {
-    state.requestMove(fromR, fromC, toR, toC, board);
-}
-
-// TDD placeholder — wire to GameState premove storage when the engine supports it.
-bool hasPremoveQueued(const GameState& state, int fromR, int fromC) {
-    return state.hasPremoveAt(fromR, fromC);
-}
-
-// Stub until GameState exposes premove queue — wire to premoves_ when engine adds it.
-bool hasQueuedPremove(const GameState& state, int fromR, int fromC, int toR, int toC) {
-    (void)state;
-    (void)fromR;
-    (void)fromC;
-    (void)toR;
-    (void)toC;
-    return false;
-}
-
 Board makeEnemyCollisionBoard() {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece::empty()});
     board.addRow({Piece::empty(), Piece::empty(), Piece::empty(), Piece::empty()});
-    board.addRow({Piece(PieceType::Rook, Color::Black), Piece::empty(), Piece::empty(),
-                  Piece::empty()});
+    board.addRow({Piece::empty(), Piece::empty(), Piece::empty(), Piece::empty()});
+    board.addRow({Piece::empty(), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::Black)});
     return board;
 }
 
@@ -373,7 +350,7 @@ TEST_CASE("test_piece_state_transitions_correctly") {
     CHECK_FALSE(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
 }
 
-// --- Advanced real-time interaction tests (TDD — expected to fail until engine supports them) ---
+// --- Advanced real-time interaction tests ---
 
 TEST_CASE("test_enemy_collision_black_started_first") {
     Board board = makeEnemyCollisionBoard();
@@ -382,15 +359,17 @@ TEST_CASE("test_enemy_collision_black_started_first") {
 
     constexpr int kWhiteR = 0;
     constexpr int kWhiteC = 0;
-    constexpr int kBlackR = 2;
-    constexpr int kBlackC = 0;
+    constexpr int kBlackR = 3;
+    constexpr int kBlackC = 3;
     constexpr int kDestR = 0;
     constexpr int kDestC = 3;
     const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    requestMoveDirect(state, board, kBlackR, kBlackC, kDestR, kDestC);
+    clickSquare(state, board, kBlackR, kBlackC);
+    clickSquare(state, board, kDestR, kDestC);
     state.advanceTime(500, board);
-    requestMoveDirect(state, board, kWhiteR, kWhiteC, kDestR, kDestC);
+    clickSquare(state, board, kWhiteR, kWhiteC);
+    clickSquare(state, board, kDestR, kDestC);
 
     state.advanceTime(kTravelMs, board);
     state.advanceTime(500, board);
@@ -407,15 +386,17 @@ TEST_CASE("test_enemy_collision_white_started_first") {
 
     constexpr int kWhiteR = 0;
     constexpr int kWhiteC = 0;
-    constexpr int kBlackR = 2;
-    constexpr int kBlackC = 0;
+    constexpr int kBlackR = 3;
+    constexpr int kBlackC = 3;
     constexpr int kDestR = 0;
     constexpr int kDestC = 3;
     const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    requestMoveDirect(state, board, kWhiteR, kWhiteC, kDestR, kDestC);
+    clickSquare(state, board, kWhiteR, kWhiteC);
+    clickSquare(state, board, kDestR, kDestC);
     state.advanceTime(500, board);
-    requestMoveDirect(state, board, kBlackR, kBlackC, kDestR, kDestC);
+    clickSquare(state, board, kBlackR, kBlackC);
+    clickSquare(state, board, kDestR, kDestC);
 
     state.advanceTime(kTravelMs, board);
     state.advanceTime(500, board);
@@ -432,14 +413,16 @@ TEST_CASE("test_enemy_collision_absolute_tie") {
 
     constexpr int kWhiteR = 0;
     constexpr int kWhiteC = 0;
-    constexpr int kBlackR = 2;
-    constexpr int kBlackC = 0;
+    constexpr int kBlackR = 3;
+    constexpr int kBlackC = 3;
     constexpr int kDestR = 0;
     constexpr int kDestC = 3;
     const long kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    requestMoveDirect(state, board, kBlackR, kBlackC, kDestR, kDestC);
-    requestMoveDirect(state, board, kWhiteR, kWhiteC, kDestR, kDestC);
+    clickSquare(state, board, kBlackR, kBlackC);
+    clickSquare(state, board, kDestR, kDestC);
+    clickSquare(state, board, kWhiteR, kWhiteC);
+    clickSquare(state, board, kDestR, kDestC);
 
     state.advanceTime(kTravelMs, board);
 
@@ -462,7 +445,7 @@ TEST_CASE("test_premove_executes_on_arrival") {
     clickSquare(state, board, kSquareA_R, kSquareA_C);
     clickSquare(state, board, kSquareC_R, kSquareC_C);
 
-    CHECK(hasPremoveQueued(state, kSquareA_R, kSquareA_C));
+    CHECK(state.hasPremoveAt(kSquareA_R, kSquareA_C));
 
     state.advanceTime(kMoveAToBDurationMs, board);
 
@@ -499,10 +482,11 @@ TEST_CASE("test_premove_cancelled_when_target_blocked") {
     clickSquare(state, board, kRookR, kRookC);
     clickSquare(state, board, kSquareC_R, kSquareC_C);
 
-    CHECK(hasPremoveQueued(state, kRookR, kRookC));
+    CHECK(state.hasPremoveAt(kRookR, kRookC));
 
     state.advanceTime(500, board);
-    requestMoveDirect(state, board, kKingR, kKingC, kSquareC_R, kSquareC_C);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kSquareC_R, kSquareC_C);
 
     state.advanceTime(kKingToCMs, board);
     CHECK(hasPieceAt(board, kSquareC_R, kSquareC_C, PieceType::King, Color::White));
@@ -529,8 +513,10 @@ TEST_CASE("test_friendly_landing_blocked_at_arrival") {
     const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
     const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
-    requestMoveDirect(state, board, kRookR, kRookC, kTargetR, kTargetC);
-    requestMoveDirect(state, board, kKingR, kKingC, kTargetR, kTargetC);
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kTargetR, kTargetC);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kTargetR, kTargetC);
 
     state.advanceTime(kKingTravelMs, board);
     CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
@@ -557,9 +543,11 @@ TEST_CASE("test_arrival_processing_order_by_started_at") {
     const long kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
     const long kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
-    requestMoveDirect(state, board, kRookR, kRookC, kTargetR, kTargetC);
+    clickSquare(state, board, kRookR, kRookC);
+    clickSquare(state, board, kTargetR, kTargetC);
     state.advanceTime(1000, board);
-    requestMoveDirect(state, board, kKingR, kKingC, kTargetR, kTargetC);
+    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(state, board, kTargetR, kTargetC);
 
     CHECK(kRookTravelMs == kKingTravelMs + 1000);
 
