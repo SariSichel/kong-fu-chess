@@ -1,6 +1,7 @@
 #include "game_state.h"
 
 #include "board.h"
+#include "board_serializer.h"
 #include "constants.h"
 
 void GameState::reset() {
@@ -27,10 +28,10 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
-    const std::string& cell = board.cell(row, col);
+    const Piece& piece = board.cell(row, col);
 
     if (!hasSelection()) {
-        if (Board::isEmpty(cell)) {
+        if (piece.isEmpty()) {
             return;
         }
         selectedRow_ = row;
@@ -38,7 +39,7 @@ void GameState::handleClick(Board& board, int x, int y) {
         return;
     }
 
-    if (!Board::isEmpty(cell) && Board::isFriendly(cell, GameConfig::kFriendlyColor)) {
+    if (!piece.isEmpty() && piece.isFriendly(GameConfig::kFriendlyColor)) {
         selectedRow_ = row;
         selectedCol_ = col;
         return;
@@ -76,5 +77,5 @@ void GameState::advanceTime(long ms, Board& board) {
 
 void GameState::printBoard(Board& board, std::ostream& out) {
     processCompletedMoves(board);
-    board.print(out);
+    BoardSerializer::print(board, out);
 }

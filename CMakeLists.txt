@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(KONG_FU_CHESS_SOURCES
     src/board.cpp
+    src/board_serializer.cpp
     src/game_state.cpp
     src/command_processor.cpp
 )

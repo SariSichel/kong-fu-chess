@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include "board.h"
+#include "board_serializer.h"
 #include "constants.h"
 #include "game_state.h"
 
@@ -24,7 +25,7 @@ const char* parseErrorMessage(ParseResult result) {
 }  // namespace
 
 void processLine(const std::string& line, std::ostream& out, Board& board, GameState& state) {
-    const std::string trimmed = Board::trimLine(line);
+    const std::string trimmed = BoardSerializer::trimLine(line);
     if (trimmed.empty()) {
         return;
     }
@@ -65,7 +66,7 @@ int run(std::istream& in, std::ostream& out) {
     Board board;
     GameState state;
 
-    const ParseResult result = Board::parseFromInput(in, board);
+    const ParseResult result = BoardSerializer::parseFromInput(in, board);
     if (result != ParseResult::OK) {
         if (const char* message = parseErrorMessage(result)) {
             out << message;

@@ -1,6 +1,8 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
+#include "piece.h"
+
 namespace BoardTokens {
 constexpr char kEmpty = '.';
 constexpr const char* kColors = "wb";
@@ -32,7 +34,7 @@ constexpr const char* kRowWidthMismatch = "ERROR ROW_WIDTH_MISMATCH";
 }  // namespace ErrorMessages
 
 namespace GameConfig {
-constexpr char kFriendlyColor = 'w';
+constexpr Color kFriendlyColor = Color::White;
 constexpr int kClickCellSize = 100;
 constexpr int kNoSelection = -1;
 }  // namespace GameConfig

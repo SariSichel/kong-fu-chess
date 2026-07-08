@@ -3,12 +3,13 @@
 #include <string>
 
 #include "board.h"
+#include "board_serializer.h"
 
 namespace {
 
 ParseResult parseInput(const std::string& input, Board& board) {
     std::istringstream in(input);
-    return Board::parseFromInput(in, board);
+    return BoardSerializer::parseFromInput(in, board);
 }
 
 std::string runInput(const std::string& input) {
@@ -29,7 +30,7 @@ int main() {
 
     {
         std::ostringstream out;
-        board.print(out);
+        BoardSerializer::print(board, out);
         assert(out.str() == "wP . wK\nwP . wP\n");
     }
 

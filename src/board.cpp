@@ -1,37 +1,15 @@
 #include "board.h"
 
 #include <cstdlib>
-#include <sstream>
 
 #include "command_processor.h"
-#include "constants.h"
 
-std::string Board::trimLine(const std::string& line) {
-    const size_t start = line.find_first_not_of(Text::kWhitespace);
-    if (start == std::string::npos) {
-        return "";
-    }
-    const size_t end = line.find_last_not_of(Text::kWhitespace);
-    return line.substr(start, end - start + 1);
+void Board::clear() {
+    grid_.clear();
 }
 
-bool Board::isValidToken(const std::string& token) {
-    if (token.length() == 1 && token[0] == BoardTokens::kEmpty) {
-        return true;
-    }
-    if (token.length() == 2) {
-        return std::string(BoardTokens::kColors).find(token[0]) != std::string::npos &&
-               std::string(BoardTokens::kPieceTypes).find(token[1]) != std::string::npos;
-    }
-    return false;
-}
-
-bool Board::isEmpty(const std::string& token) {
-    return token.length() == 1 && token[0] == BoardTokens::kEmpty;
-}
-
-bool Board::isFriendly(const std::string& token, char friendlyColor) {
-    return !isEmpty(token) && token[0] == friendlyColor;
+void Board::addRow(std::vector<Piece> row) {
+    grid_.push_back(std::move(row));
 }
 
 bool Board::inBounds(int row, int col) const {
@@ -39,13 +17,13 @@ bool Board::inBounds(int row, int col) const {
            static_cast<size_t>(col) < cols();
 }
 
-const std::string& Board::cell(int row, int col) const {
+const Piece& Board::cell(int row, int col) const {
     return grid_[row][col];
 }
 
 void Board::movePiece(int fromR, int fromC, int toR, int toC) {
     grid_[toR][toC] = grid_[fromR][fromC];
-    grid_[fromR][fromC] = std::string(1, BoardTokens::kEmpty);
+    grid_[fromR][fromC] = Piece::empty();
 }
 
 int Board::sign(int delta) {
@@ -65,7 +43,7 @@ bool Board::isPathClear(int fromR, int fromC, int toR, int toC) const {
     int c = fromC + stepC;
 
     while (r != toR || c != toC) {
-        if (!isEmpty(cell(r, c))) {
+        if (!cell(r, c).isEmpty()) {
             return false;
         }
         r += stepR;
@@ -113,79 +91,26 @@ bool Board::canMove(int fromR, int fromC, int toR, int toC) const {
         return false;
     }
 
-    const std::string& piece = cell(fromR, fromC);
-    if (isEmpty(piece)) {
+    const Piece& piece = cell(fromR, fromC);
+    if (piece.isEmpty()) {
         return false;
     }
 
-    switch (piece[1]) {
-        case BoardTokens::kKing:
+    switch (piece.type()) {
+        case PieceType::King:
             return canKingMove(fromR, fromC, toR, toC);
-        case BoardTokens::kRook:
+        case PieceType::Rook:
             return canRookMove(fromR, fromC, toR, toC);
-        case BoardTokens::kBishop:
+        case PieceType::Bishop:
             return canBishopMove(fromR, fromC, toR, toC);
-        case BoardTokens::kQueen:
+        case PieceType::Queen:
             return canQueenMove(fromR, fromC, toR, toC);
-        case BoardTokens::kKnight:
+        case PieceType::Knight:
             return canKnightMove(fromR, fromC, toR, toC);
-        case BoardTokens::kPawn:
+        case PieceType::Pawn:
+        case PieceType::Empty:
         default:
             return false;
-    }
-}
-
-ParseResult Board::parseFromInput(std::istream& in, Board& board) {
-    std::string line;
-    bool isParsingBoard = false;
-    board.grid_.clear();
-
-    while (std::getline(in, line)) {
-        line = trimLine(line);
-
-        if (line == InputMarkers::kBoardSection) {
-            isParsingBoard = true;
-            continue;
-        }
-        if (line == InputMarkers::kCommandsSection) {
-            isParsingBoard = false;
-            break;
-        }
-        if (!isParsingBoard || line.empty()) {
-            continue;
-        }
-
-        std::stringstream ss(line);
-        std::string token;
-        std::vector<std::string> row;
-
-        while (ss >> token) {
-            if (!isValidToken(token)) {
-                return ParseResult::ERROR_UNKNOWN_TOKEN;
-            }
-            row.push_back(token);
-        }
-
-        if (!row.empty()) {
-            if (!board.grid_.empty() && row.size() != board.grid_[0].size()) {
-                return ParseResult::ERROR_ROW_WIDTH_MISMATCH;
-            }
-            board.grid_.push_back(row);
-        }
-    }
-
-    return ParseResult::OK;
-}
-
-void Board::print(std::ostream& out) const {
-    for (size_t i = 0; i < grid_.size(); ++i) {
-        for (size_t j = 0; j < grid_[i].size(); ++j) {
-            if (j > 0) {
-                out << ' ';
-            }
-            out << grid_[i][j];
-        }
-        out << '\n';
     }
 }
 
