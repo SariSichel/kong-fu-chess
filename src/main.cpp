@@ -1,7 +1,9 @@
 #include <iostream>
 
-#include "command_processor.h"
+#include "texttests/script_runner.h"
 
 int main() {
-    return CommandProcessor::run(std::cin, std::cout);
+    texttests::ScriptRunner runner;
+    runner.run(std::cin, std::cout);
+    return 0;
 }

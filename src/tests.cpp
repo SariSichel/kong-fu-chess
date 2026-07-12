@@ -6,53 +6,78 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <vector>
 
-#include "board.h"
-#include "board_serializer.h"
-#include "command_processor.h"
 #include "constants.h"
-#include "game_state.h"
+#include "engine/game_engine.h"
+#include "input/controller.h"
+#include "io/board_parser.h"
+#include "io/board_printer.h"
+#include "texttests/script_runner.h"
 
 namespace {
 
-ParseResult parseInput(const std::string& input, Board& board) {
+using model::Board;
+using model::Color;
+using model::Piece;
+using model::PieceType;
+using model::Position;
+
+enum class TestMovementState {
+    Idle,
+    Moving,
+    Airborne
+};
+
+Position pos(int row, int col) {
+    return Position{row, col};
+}
+
+io::ParseResult parseInput(const std::string& input, Board& board) {
     std::istringstream in(input);
-    return BoardSerializer::parseFromInput(in, board);
+    return io::BoardParser::parseFromInput(in, board);
 }
 
 std::string runInput(const std::string& input) {
     std::istringstream in(input);
     std::ostringstream out;
-    CommandProcessor::run(in, out);
+    texttests::ScriptRunner runner;
+    runner.run(in, out);
     return out.str();
 }
 
-Board makeCommonRouteBoard() {
-    Board board;
-    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
-                  Piece::empty()});
-    return board;
-}
-
-void clickSquare(GameState& state, Board& board, int row, int col) {
+void clickSquare(engine::GameEngine& engine, input::Controller& controller, int row, int col) {
     const int x = col * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
     const int y = row * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
-    state.handleClick(board, x, y);
+    controller.handleClick(engine, x, y);
 }
 
-void jumpSquare(GameState& state, Board& board, int row, int col) {
+void jumpSquare(engine::GameEngine& engine, input::Controller& controller, int row, int col) {
     const int x = col * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
     const int y = row * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
-    state.handleJump(board, x, y);
+    controller.handleJump(engine, x, y);
+}
+
+void copyBoardIntoEngine(engine::GameEngine& engine, const Board& source) {
+    engine.board().clear();
+    for (size_t row = 0; row < source.rows(); ++row) {
+        std::vector<Piece> rowPieces;
+        rowPieces.reserve(source.cols());
+        for (size_t col = 0; col < source.cols(); ++col) {
+            rowPieces.push_back(source.cell(pos(static_cast<int>(row), static_cast<int>(col))));
+        }
+        engine.board().addRow(std::move(rowPieces));
+    }
+    engine.reset();
 }
 
 bool hasRookAt(const Board& board, int row, int col, Color color = Color::White) {
-    const Piece& piece = board.cell(row, col);
+    const Piece& piece = board.cell(pos(row, col));
     return piece.type() == PieceType::Rook && piece.color() == color;
 }
 
 bool hasPieceAt(const Board& board, int row, int col, PieceType type, Color color) {
-    const Piece& piece = board.cell(row, col);
+    const Piece& piece = board.cell(pos(row, col));
     return piece.type() == type && piece.color() == color;
 }
 
@@ -61,6 +86,13 @@ std::int64_t moveDurationMs(int fromR, int fromC, int toR, int toC) {
     const int dc = std::abs(toC - fromC);
     const int distance = std::max(dr, dc);
     return static_cast<std::int64_t>(distance) * GameConfig::kMoveDurationMs;
+}
+
+Board makeCommonRouteBoard() {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    return board;
 }
 
 Board makeEnemyCollisionBoard() {
@@ -125,20 +157,38 @@ Board makeKingStepsAwayBoard() {
     return board;
 }
 
-PieceMovementState movementStateAt(const Board& board, int row, int col) {
-    return board.cell(row, col).movementState();
+TestMovementState movementStateAt(const engine::GameEngine& engine, int row, int col) {
+    const Position square = pos(row, col);
+    if (!engine.isBusyAt(square)) {
+        return TestMovementState::Idle;
+    }
+
+    Position destination;
+    if (engine.getActiveMoveDestination(square, destination)) {
+        return TestMovementState::Moving;
+    }
+
+    return TestMovementState::Airborne;
 }
 
-bool isPieceMovingAt(const Board& board, int row, int col) {
-    return movementStateAt(board, row, col) == PieceMovementState::Moving;
+bool isPieceMovingAt(const engine::GameEngine& engine, int row, int col) {
+    return movementStateAt(engine, row, col) == TestMovementState::Moving;
 }
 
-int pieceDestinationRow(const Board& board, int row, int col) {
-    return board.cell(row, col).destinationRow();
+int pieceDestinationRow(const engine::GameEngine& engine, int row, int col) {
+    Position destination;
+    if (engine.getActiveMoveDestination(pos(row, col), destination)) {
+        return destination.row;
+    }
+    return -1;
 }
 
-int pieceDestinationCol(const Board& board, int row, int col) {
-    return board.cell(row, col).destinationCol();
+int pieceDestinationCol(const engine::GameEngine& engine, int row, int col) {
+    Position destination;
+    if (engine.getActiveMoveDestination(pos(row, col), destination)) {
+        return destination.col;
+    }
+    return -1;
 }
 
 constexpr int kSquareA_R = 0;
@@ -156,21 +206,21 @@ constexpr std::int64_t kMoveBToCDurationMs = 1 * GameConfig::kMoveDurationMs;
 TEST_CASE("board parsing and printing") {
     Board board;
 
-    CHECK(parseInput(" Board:\nwP . wK\nwP . wP\nCommands:", board) == ParseResult::OK);
+    CHECK(parseInput(" Board:\nwP . wK\nwP . wP\nCommands:", board) == io::ParseResult::OK);
     CHECK(board.rows() == 2);
     CHECK(board.cols() == 3);
 
     std::ostringstream out;
-    BoardSerializer::print(board, out);
+    io::BoardPrinter::print(board, out);
     CHECK(out.str() == "wP . wK\nwP . wP\n");
 }
 
 TEST_CASE("parse errors") {
     Board board;
 
-    CHECK(parseInput("Board:\ninvalid\nCommands:", board) == ParseResult::ERROR_UNKNOWN_TOKEN);
+    CHECK(parseInput("Board:\ninvalid\nCommands:", board) == io::ParseResult::ERROR_UNKNOWN_TOKEN);
     CHECK(parseInput("Board:\nwP .\nwP . wP\nCommands:", board) ==
-          ParseResult::ERROR_ROW_WIDTH_MISMATCH);
+          io::ParseResult::ERROR_ROW_WIDTH_MISMATCH);
 }
 
 TEST_CASE("basic click and command integration") {
@@ -329,21 +379,22 @@ TEST_CASE("pawn: promotion happens via GameState arrival (state-level check)") {
     board.addRow({Piece::empty(), Piece::empty()});
     board.addRow({Piece(PieceType::Pawn, Color::White), Piece::empty()});
 
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    clickSquare(state, board, 1, 0);
-    clickSquare(state, board, 0, 0);
+    clickSquare(engine, controller, 1, 0);
+    clickSquare(engine, controller, 0, 0);
 
     // Move is validated and started, but the piece is still a Pawn mid-flight.
-    CHECK(isPieceMovingAt(board, 1, 0));
-    CHECK(board.cell(1, 0).type() == PieceType::Pawn);
+    CHECK(isPieceMovingAt(engine, 1, 0));
+    CHECK(engine.board().cell(pos(1, 0)).type() == PieceType::Pawn);
 
-    state.advanceTime(moveDurationMs(1, 0, 0, 0), board);
+    engine.advanceTime(static_cast<int>(moveDurationMs(1, 0, 0, 0)));
 
-    CHECK(hasPieceAt(board, 0, 0, PieceType::Queen, Color::White));
-    CHECK_FALSE(hasPieceAt(board, 0, 0, PieceType::Pawn, Color::White));
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+    CHECK(hasPieceAt(engine.board(), 0, 0, PieceType::Queen, Color::White));
+    CHECK_FALSE(hasPieceAt(engine.board(), 0, 0, PieceType::Pawn, Color::White));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
 }
 
 TEST_CASE("pawn: invalid double step leaves the board completely unchanged") {
@@ -355,21 +406,22 @@ TEST_CASE("pawn: invalid double step leaves the board completely unchanged") {
     board.addRow({Piece::empty(), Piece::empty()});
     board.addRow({Piece::empty(), Piece::empty()});
 
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     // Pawn at row 2 is NOT on the start row (rows()-1 == 4), so a 2 -> 0 jump is invalid.
-    clickSquare(state, board, 2, 0);
-    clickSquare(state, board, 0, 0);
+    clickSquare(engine, controller, 2, 0);
+    clickSquare(engine, controller, 0, 0);
 
-    CHECK_FALSE(isPieceMovingAt(board, 2, 0));
-    CHECK(hasPieceAt(board, 2, 0, PieceType::Pawn, Color::White));
+    CHECK_FALSE(isPieceMovingAt(engine, 2, 0));
+    CHECK(hasPieceAt(engine.board(), 2, 0, PieceType::Pawn, Color::White));
 
-    state.advanceTime(moveDurationMs(2, 0, 0, 0), board);
+    engine.advanceTime(static_cast<int>(moveDurationMs(2, 0, 0, 0)));
 
-    CHECK(hasPieceAt(board, 2, 0, PieceType::Pawn, Color::White));
-    CHECK_FALSE(hasPieceAt(board, 0, 0, PieceType::Pawn, Color::White));
-    CHECK_FALSE(hasPieceAt(board, 0, 0, PieceType::Queen, Color::White));
+    CHECK(hasPieceAt(engine.board(), 2, 0, PieceType::Pawn, Color::White));
+    CHECK_FALSE(hasPieceAt(engine.board(), 0, 0, PieceType::Pawn, Color::White));
+    CHECK_FALSE(hasPieceAt(engine.board(), 0, 0, PieceType::Queen, Color::White));
 }
 
 TEST_CASE("timed movement before and after arrival") {
@@ -398,120 +450,125 @@ TEST_CASE("architecture gap: print before wait shows source") {
 
 TEST_CASE("test_cannot_redirect_while_moving") {
     Board board = makeCommonRouteBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Idle);
+    CHECK(movementStateAt(engine, kSquareA_R, kSquareA_C) == TestMovementState::Idle);
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
 
-    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
-    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
-    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+    CHECK(isPieceMovingAt(engine, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(engine, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(engine, kSquareA_R, kSquareA_C) == kSquareB_C);
 
-    state.advanceTime(kMoveAToBDurationMs / 2, board);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs / 2));
 
-    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
-    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
-    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+    CHECK(isPieceMovingAt(engine, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(engine, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(engine, kSquareA_R, kSquareA_C) == kSquareB_C);
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareC_R, kSquareC_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareC_R, kSquareC_C);
 
-    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
-    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+    CHECK(pieceDestinationRow(engine, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(engine, kSquareA_R, kSquareA_C) == kSquareB_C);
 
-    state.advanceTime(kMoveAToBDurationMs / 2, board);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs / 2));
 
-    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
-    CHECK_FALSE(hasRookAt(board, kSquareC_R, kSquareC_C));
-    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
+    CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+    CHECK_FALSE(hasRookAt(engine.board(), kSquareC_R, kSquareC_C));
+    CHECK(movementStateAt(engine, kSquareB_R, kSquareB_C) == TestMovementState::Idle);
 }
 
 TEST_CASE("test_cannot_send_duplicate_command_while_moving") {
     Board board = makeCommonRouteBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
 
-    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
-    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
-    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+    CHECK(isPieceMovingAt(engine, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(engine, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(engine, kSquareA_R, kSquareA_C) == kSquareB_C);
 
-    state.advanceTime(kMoveAToBDurationMs / 2, board);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs / 2));
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
 
-    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
-    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+    CHECK(pieceDestinationRow(engine, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(engine, kSquareA_R, kSquareA_C) == kSquareB_C);
 
-    state.advanceTime(kMoveAToBDurationMs / 2, board);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs / 2));
 
-    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
-    CHECK_FALSE(hasRookAt(board, kSquareA_R, kSquareA_C));
+    CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+    CHECK_FALSE(hasRookAt(engine.board(), kSquareA_R, kSquareA_C));
 }
 
 TEST_CASE("test_can_move_immediately_upon_arrival_no_cooldown") {
     Board board = makeCommonRouteBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
-    state.advanceTime(kMoveAToBDurationMs, board);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs));
 
-    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
-    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
+    CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+    CHECK(movementStateAt(engine, kSquareB_R, kSquareB_C) == TestMovementState::Idle);
 
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
-    clickSquare(state, board, kSquareC_R, kSquareC_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareC_R, kSquareC_C);
 
-    CHECK(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
-    CHECK(pieceDestinationRow(board, kSquareB_R, kSquareB_C) == kSquareC_R);
-    CHECK(pieceDestinationCol(board, kSquareB_R, kSquareB_C) == kSquareC_C);
+    CHECK(isPieceMovingAt(engine, kSquareB_R, kSquareB_C));
+    CHECK(pieceDestinationRow(engine, kSquareB_R, kSquareB_C) == kSquareC_R);
+    CHECK(pieceDestinationCol(engine, kSquareB_R, kSquareB_C) == kSquareC_C);
 
-    state.advanceTime(kMoveBToCDurationMs, board);
+    engine.advanceTime(static_cast<int>(kMoveBToCDurationMs));
 
-    CHECK(hasRookAt(board, kSquareC_R, kSquareC_C));
-    CHECK_FALSE(hasRookAt(board, kSquareB_R, kSquareB_C));
+    CHECK(hasRookAt(engine.board(), kSquareC_R, kSquareC_C));
+    CHECK_FALSE(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
 }
 
 TEST_CASE("test_piece_state_transitions_correctly") {
     Board board = makeCommonRouteBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Idle);
-    CHECK_FALSE(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+    CHECK(movementStateAt(engine, kSquareA_R, kSquareA_C) == TestMovementState::Idle);
+    CHECK_FALSE(isPieceMovingAt(engine, kSquareA_R, kSquareA_C));
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
 
-    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Moving);
-    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
-    CHECK(pieceDestinationRow(board, kSquareA_R, kSquareA_C) == kSquareB_R);
-    CHECK(pieceDestinationCol(board, kSquareA_R, kSquareA_C) == kSquareB_C);
+    CHECK(movementStateAt(engine, kSquareA_R, kSquareA_C) == TestMovementState::Moving);
+    CHECK(isPieceMovingAt(engine, kSquareA_R, kSquareA_C));
+    CHECK(pieceDestinationRow(engine, kSquareA_R, kSquareA_C) == kSquareB_R);
+    CHECK(pieceDestinationCol(engine, kSquareA_R, kSquareA_C) == kSquareB_C);
 
-    state.advanceTime(kMoveAToBDurationMs - 1, board);
-    CHECK(movementStateAt(board, kSquareA_R, kSquareA_C) == PieceMovementState::Moving);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs - 1));
+    CHECK(movementStateAt(engine, kSquareA_R, kSquareA_C) == TestMovementState::Moving);
 
-    state.advanceTime(1, board);
+    engine.advanceTime(static_cast<int>(1));
 
-    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
-    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
-    CHECK_FALSE(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
+    CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+    CHECK(movementStateAt(engine, kSquareB_R, kSquareB_C) == TestMovementState::Idle);
+    CHECK_FALSE(isPieceMovingAt(engine, kSquareB_R, kSquareB_C));
 }
 
 // --- Advanced real-time interaction tests ---
 
 TEST_CASE("test_enemy_collision_black_started_first") {
     Board board = makeEnemyCollisionBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kWhiteR = 0;
     constexpr int kWhiteC = 0;
@@ -521,24 +578,25 @@ TEST_CASE("test_enemy_collision_black_started_first") {
     constexpr int kDestC = 3;
     const std::int64_t kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    clickSquare(state, board, kBlackR, kBlackC);
-    clickSquare(state, board, kDestR, kDestC);
-    state.advanceTime(500, board);
-    clickSquare(state, board, kWhiteR, kWhiteC);
-    clickSquare(state, board, kDestR, kDestC);
+    clickSquare(engine, controller, kBlackR, kBlackC);
+    clickSquare(engine, controller, kDestR, kDestC);
+    engine.advanceTime(static_cast<int>(500));
+    clickSquare(engine, controller, kWhiteR, kWhiteC);
+    clickSquare(engine, controller, kDestR, kDestC);
 
-    state.advanceTime(kTravelMs, board);
-    state.advanceTime(500, board);
+    engine.advanceTime(static_cast<int>(kTravelMs));
+    engine.advanceTime(static_cast<int>(500));
 
-    CHECK(hasRookAt(board, kDestR, kDestC, Color::Black));
-    CHECK_FALSE(hasRookAt(board, kWhiteR, kWhiteC, Color::White));
-    CHECK_FALSE(hasRookAt(board, kDestR, kDestC, Color::White));
+    CHECK(hasRookAt(engine.board(), kDestR, kDestC, Color::Black));
+    CHECK_FALSE(hasRookAt(engine.board(), kWhiteR, kWhiteC, Color::White));
+    CHECK_FALSE(hasRookAt(engine.board(), kDestR, kDestC, Color::White));
 }
 
 TEST_CASE("test_enemy_collision_white_started_first") {
     Board board = makeEnemyCollisionBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kWhiteR = 0;
     constexpr int kWhiteC = 0;
@@ -548,24 +606,25 @@ TEST_CASE("test_enemy_collision_white_started_first") {
     constexpr int kDestC = 3;
     const std::int64_t kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    clickSquare(state, board, kWhiteR, kWhiteC);
-    clickSquare(state, board, kDestR, kDestC);
-    state.advanceTime(500, board);
-    clickSquare(state, board, kBlackR, kBlackC);
-    clickSquare(state, board, kDestR, kDestC);
+    clickSquare(engine, controller, kWhiteR, kWhiteC);
+    clickSquare(engine, controller, kDestR, kDestC);
+    engine.advanceTime(static_cast<int>(500));
+    clickSquare(engine, controller, kBlackR, kBlackC);
+    clickSquare(engine, controller, kDestR, kDestC);
 
-    state.advanceTime(kTravelMs, board);
-    state.advanceTime(500, board);
+    engine.advanceTime(static_cast<int>(kTravelMs));
+    engine.advanceTime(static_cast<int>(500));
 
-    CHECK(hasRookAt(board, kDestR, kDestC, Color::White));
-    CHECK_FALSE(hasRookAt(board, kBlackR, kBlackC, Color::Black));
-    CHECK_FALSE(hasRookAt(board, kDestR, kDestC, Color::Black));
+    CHECK(hasRookAt(engine.board(), kDestR, kDestC, Color::White));
+    CHECK_FALSE(hasRookAt(engine.board(), kBlackR, kBlackC, Color::Black));
+    CHECK_FALSE(hasRookAt(engine.board(), kDestR, kDestC, Color::Black));
 }
 
 TEST_CASE("test_enemy_collision_absolute_tie") {
     Board board = makeEnemyCollisionBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kWhiteR = 0;
     constexpr int kWhiteC = 0;
@@ -575,90 +634,96 @@ TEST_CASE("test_enemy_collision_absolute_tie") {
     constexpr int kDestC = 3;
     const std::int64_t kTravelMs = moveDurationMs(kWhiteR, kWhiteC, kDestR, kDestC);
 
-    clickSquare(state, board, kBlackR, kBlackC);
-    clickSquare(state, board, kDestR, kDestC);
-    clickSquare(state, board, kWhiteR, kWhiteC);
-    clickSquare(state, board, kDestR, kDestC);
+    clickSquare(engine, controller, kBlackR, kBlackC);
+    clickSquare(engine, controller, kDestR, kDestC);
+    clickSquare(engine, controller, kWhiteR, kWhiteC);
+    clickSquare(engine, controller, kDestR, kDestC);
 
-    state.advanceTime(kTravelMs, board);
+    engine.advanceTime(static_cast<int>(kTravelMs));
 
     // Tie-breaker: earlier command order wins (black requested first at the same tick).
-    CHECK(hasRookAt(board, kDestR, kDestC, Color::Black));
-    CHECK_FALSE(hasRookAt(board, kDestR, kDestC, Color::White));
-    CHECK_FALSE(hasRookAt(board, kWhiteR, kWhiteC, Color::White));
+    CHECK(hasRookAt(engine.board(), kDestR, kDestC, Color::Black));
+    CHECK_FALSE(hasRookAt(engine.board(), kDestR, kDestC, Color::White));
+    CHECK_FALSE(hasRookAt(engine.board(), kWhiteR, kWhiteC, Color::White));
 }
 
 TEST_CASE("test_premove_executes_on_arrival") {
     Board board = makeCommonRouteBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
 
-    CHECK(isPieceMovingAt(board, kSquareA_R, kSquareA_C));
+    CHECK(isPieceMovingAt(engine, kSquareA_R, kSquareA_C));
 
-    clickSquare(state, board, kSquareA_R, kSquareA_C);
-    clickSquare(state, board, kSquareC_R, kSquareC_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareC_R, kSquareC_C);
 
-    CHECK(state.hasPremoveAt(kSquareA_R, kSquareA_C));
+    CHECK(engine.hasPremoveAt(pos(kSquareA_R, kSquareA_C)));
 
-    state.advanceTime(kMoveAToBDurationMs, board);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs));
 
-    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
-    CHECK(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
-    CHECK(pieceDestinationRow(board, kSquareB_R, kSquareB_C) == kSquareC_R);
-    CHECK(pieceDestinationCol(board, kSquareB_R, kSquareB_C) == kSquareC_C);
+    CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+    CHECK(isPieceMovingAt(engine, kSquareB_R, kSquareB_C));
+    CHECK(pieceDestinationRow(engine, kSquareB_R, kSquareB_C) == kSquareC_R);
+    CHECK(pieceDestinationCol(engine, kSquareB_R, kSquareB_C) == kSquareC_C);
 
-    state.advanceTime(kMoveBToCDurationMs, board);
+    engine.advanceTime(static_cast<int>(kMoveBToCDurationMs));
 
-    CHECK(hasRookAt(board, kSquareC_R, kSquareC_C));
-    CHECK(movementStateAt(board, kSquareC_R, kSquareC_C) == PieceMovementState::Idle);
+    CHECK(hasRookAt(engine.board(), kSquareC_R, kSquareC_C));
+    CHECK(movementStateAt(engine, kSquareC_R, kSquareC_C) == TestMovementState::Idle);
 }
 
 TEST_CASE("test_premove_cancelled_when_target_blocked") {
     Board board = makePremoveCancellationBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
-    constexpr int kSquareB_R = 0;
-    constexpr int kSquareB_C = 2;
-    constexpr int kSquareC_R = 0;
-    constexpr int kSquareC_C = 3;
+    constexpr int local_kSquareB_R = 0;
+    constexpr int local_kSquareB_C = 2;
+    constexpr int local_kSquareC_R = 0;
+    constexpr int local_kSquareC_C = 3;
     constexpr int kKingR = 1;
     constexpr int kKingC = 3;
-    const std::int64_t kRookToBMs = moveDurationMs(kRookR, kRookC, kSquareB_R, kSquareB_C);
-    const std::int64_t kKingToCMs = moveDurationMs(kKingR, kKingC, kSquareC_R, kSquareC_C);
+    const std::int64_t kRookToBMs =
+        moveDurationMs(kRookR, kRookC, local_kSquareB_R, local_kSquareB_C);
+    const std::int64_t kKingToCMs =
+        moveDurationMs(kKingR, kKingC, local_kSquareC_R, local_kSquareC_C);
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, local_kSquareB_R, local_kSquareB_C);
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kSquareC_R, kSquareC_C);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, local_kSquareC_R, local_kSquareC_C);
 
-    CHECK(state.hasPremoveAt(kRookR, kRookC));
+    CHECK(engine.hasPremoveAt(pos(kRookR, kRookC)));
 
-    state.advanceTime(500, board);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kSquareC_R, kSquareC_C);
+    engine.advanceTime(static_cast<int>(500));
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, local_kSquareC_R, local_kSquareC_C);
 
-    state.advanceTime(kKingToCMs, board);
-    CHECK(hasPieceAt(board, kSquareC_R, kSquareC_C, PieceType::King, Color::White));
+    engine.advanceTime(static_cast<int>(kKingToCMs));
+    CHECK(hasPieceAt(engine.board(), local_kSquareC_R, local_kSquareC_C, PieceType::King,
+                     Color::White));
 
-    state.advanceTime(kRookToBMs - 500, board);
+    engine.advanceTime(static_cast<int>(kRookToBMs - 500));
 
-    CHECK(hasRookAt(board, kSquareB_R, kSquareB_C));
-    CHECK(movementStateAt(board, kSquareB_R, kSquareB_C) == PieceMovementState::Idle);
-    CHECK_FALSE(isPieceMovingAt(board, kSquareB_R, kSquareB_C));
-    CHECK_FALSE(hasRookAt(board, kSquareC_R, kSquareC_C));
+    CHECK(hasRookAt(engine.board(), local_kSquareB_R, local_kSquareB_C));
+    CHECK(movementStateAt(engine, local_kSquareB_R, local_kSquareB_C) == TestMovementState::Idle);
+    CHECK_FALSE(isPieceMovingAt(engine, local_kSquareB_R, local_kSquareB_C));
+    CHECK_FALSE(hasRookAt(engine.board(), local_kSquareC_R, local_kSquareC_C));
 }
 
 TEST_CASE("test_friendly_landing_blocked_at_arrival") {
     Board board = makeFriendlyLandingBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -669,26 +734,27 @@ TEST_CASE("test_friendly_landing_blocked_at_arrival") {
     const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
     const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kTargetR, kTargetC);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kTargetR, kTargetC);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
 
-    state.advanceTime(kKingTravelMs, board);
-    CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+    engine.advanceTime(static_cast<int>(kKingTravelMs));
+    CHECK(hasPieceAt(engine.board(), kTargetR, kTargetC, PieceType::King, Color::White));
 
-    state.advanceTime(kRookTravelMs - kKingTravelMs, board);
+    engine.advanceTime(static_cast<int>(kRookTravelMs - kKingTravelMs));
 
-    CHECK(hasRookAt(board, kRookR, kRookC));
-    CHECK(movementStateAt(board, kRookR, kRookC) == PieceMovementState::Idle);
-    CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
-    CHECK_FALSE(hasRookAt(board, kTargetR, kTargetC));
+    CHECK(hasRookAt(engine.board(), kRookR, kRookC));
+    CHECK(movementStateAt(engine, kRookR, kRookC) == TestMovementState::Idle);
+    CHECK(hasPieceAt(engine.board(), kTargetR, kTargetC, PieceType::King, Color::White));
+    CHECK_FALSE(hasRookAt(engine.board(), kTargetR, kTargetC));
 }
 
 TEST_CASE("test_arrival_processing_order_by_started_at") {
     Board board = makeArrivalOrderBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -699,28 +765,29 @@ TEST_CASE("test_arrival_processing_order_by_started_at") {
     const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
     const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kTargetR, kTargetC);
-    state.advanceTime(1000, board);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kTargetR, kTargetC);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
+    engine.advanceTime(static_cast<int>(1000));
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
 
     CHECK(kRookTravelMs == kKingTravelMs + 1000);
 
-    state.advanceTime(kKingTravelMs, board);
+    engine.advanceTime(static_cast<int>(kKingTravelMs));
 
-    CHECK(hasRookAt(board, kTargetR, kTargetC));
-    CHECK(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::White));
-    CHECK(movementStateAt(board, kKingR, kKingC) == PieceMovementState::Idle);
-    CHECK_FALSE(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+    CHECK(hasRookAt(engine.board(), kTargetR, kTargetC));
+    CHECK(hasPieceAt(engine.board(), kKingR, kKingC, PieceType::King, Color::White));
+    CHECK(movementStateAt(engine, kKingR, kKingC) == TestMovementState::Idle);
+    CHECK_FALSE(hasPieceAt(engine.board(), kTargetR, kTargetC, PieceType::King, Color::White));
 }
 
 // --- Game-over behavior tests (TDD: requires GameState::isGameOver()) ---
 
 TEST_CASE("game over: basic king capture ends the game") {
     Board board = makeBasicKingCaptureBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -728,25 +795,26 @@ TEST_CASE("game over: basic king capture ends the game") {
     constexpr int kKingC = 3;
     const std::int64_t kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
 
-    CHECK_FALSE(state.isGameOver());
+    CHECK_FALSE(engine.isGameOver());
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kKingR, kKingC);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kKingR, kKingC);
 
-    CHECK_FALSE(state.isGameOver());
-    CHECK(isPieceMovingAt(board, kRookR, kRookC));
+    CHECK_FALSE(engine.isGameOver());
+    CHECK(isPieceMovingAt(engine, kRookR, kRookC));
 
-    state.advanceTime(kCaptureMs, board);
+    engine.advanceTime(static_cast<int>(kCaptureMs));
 
-    CHECK(state.isGameOver());
-    CHECK(hasRookAt(board, kKingR, kKingC, Color::White));
-    CHECK_FALSE(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::Black));
+    CHECK(engine.isGameOver());
+    CHECK(hasRookAt(engine.board(), kKingR, kKingC, Color::White));
+    CHECK_FALSE(hasPieceAt(engine.board(), kKingR, kKingC, PieceType::King, Color::Black));
 }
 
 TEST_CASE("game over: moves are ignored after king capture") {
     Board board = makeIgnoreMovesAfterGameOverBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -758,32 +826,34 @@ TEST_CASE("game over: moves are ignored after king capture") {
     constexpr int kKnightDestC = 2;
     const std::int64_t kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kKingR, kKingC);
-    state.advanceTime(kCaptureMs, board);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kKingR, kKingC);
+    engine.advanceTime(static_cast<int>(kCaptureMs));
 
-    CHECK(state.isGameOver());
-    CHECK(hasRookAt(board, kKingR, kKingC, Color::White));
-    CHECK(hasPieceAt(board, kKnightR, kKnightC, PieceType::Knight, Color::White));
+    CHECK(engine.isGameOver());
+    CHECK(hasRookAt(engine.board(), kKingR, kKingC, Color::White));
+    CHECK(hasPieceAt(engine.board(), kKnightR, kKnightC, PieceType::Knight, Color::White));
 
-    clickSquare(state, board, kKnightR, kKnightC);
-    clickSquare(state, board, kKnightDestR, kKnightDestC);
+    clickSquare(engine, controller, kKnightR, kKnightC);
+    clickSquare(engine, controller, kKnightDestR, kKnightDestC);
 
-    CHECK(hasPieceAt(board, kKnightR, kKnightC, PieceType::Knight, Color::White));
-    CHECK_FALSE(isPieceMovingAt(board, kKnightR, kKnightC));
-    CHECK_FALSE(hasPieceAt(board, kKnightDestR, kKnightDestC, PieceType::Knight, Color::White));
+    CHECK(hasPieceAt(engine.board(), kKnightR, kKnightC, PieceType::Knight, Color::White));
+    CHECK_FALSE(isPieceMovingAt(engine, kKnightR, kKnightC));
+    CHECK_FALSE(hasPieceAt(engine.board(), kKnightDestR, kKnightDestC, PieceType::Knight, Color::White));
 
-    state.advanceTime(moveDurationMs(kKnightR, kKnightC, kKnightDestR, kKnightDestC), board);
+    engine.advanceTime(static_cast<int>(
+        moveDurationMs(kKnightR, kKnightC, kKnightDestR, kKnightDestC)));
 
-    CHECK(hasPieceAt(board, kKnightR, kKnightC, PieceType::Knight, Color::White));
-    CHECK_FALSE(hasPieceAt(board, kKnightDestR, kKnightDestC, PieceType::Knight, Color::White));
-    CHECK(state.isGameOver());
+    CHECK(hasPieceAt(engine.board(), kKnightR, kKnightC, PieceType::Knight, Color::White));
+    CHECK_FALSE(hasPieceAt(engine.board(), kKnightDestR, kKnightDestC, PieceType::Knight, Color::White));
+    CHECK(engine.isGameOver());
 }
 
 TEST_CASE("game over: friendly collision on own king does not end game") {
     Board board = makeFriendlyLandingBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -794,28 +864,29 @@ TEST_CASE("game over: friendly collision on own king does not end game") {
     const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
     const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
-    CHECK_FALSE(state.isGameOver());
+    CHECK_FALSE(engine.isGameOver());
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kTargetR, kTargetC);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kTargetR, kTargetC);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
 
-    state.advanceTime(kKingTravelMs, board);
-    CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+    engine.advanceTime(static_cast<int>(kKingTravelMs));
+    CHECK(hasPieceAt(engine.board(), kTargetR, kTargetC, PieceType::King, Color::White));
 
-    state.advanceTime(kRookTravelMs - kKingTravelMs, board);
+    engine.advanceTime(static_cast<int>(kRookTravelMs - kKingTravelMs));
 
-    CHECK_FALSE(state.isGameOver());
-    CHECK(hasRookAt(board, kRookR, kRookC));
-    CHECK(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
-    CHECK_FALSE(hasRookAt(board, kTargetR, kTargetC));
+    CHECK_FALSE(engine.isGameOver());
+    CHECK(hasRookAt(engine.board(), kRookR, kRookC));
+    CHECK(hasPieceAt(engine.board(), kTargetR, kTargetC, PieceType::King, Color::White));
+    CHECK_FALSE(hasRookAt(engine.board(), kTargetR, kTargetC));
 }
 
 TEST_CASE("game over: simultaneous arrival tie does not capture the king") {
     Board board = makeArrivalOrderBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -826,31 +897,32 @@ TEST_CASE("game over: simultaneous arrival tie does not capture the king") {
     const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kTargetR, kTargetC);
     const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kTargetR, kTargetC);
 
-    CHECK_FALSE(state.isGameOver());
+    CHECK_FALSE(engine.isGameOver());
 
     // Rook starts first; king races to the same square and arrives on the same tick.
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kTargetR, kTargetC);
-    state.advanceTime(1000, board);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kTargetR, kTargetC);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
+    engine.advanceTime(static_cast<int>(1000));
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, kTargetR, kTargetC);
 
     CHECK(kRookTravelMs == kKingTravelMs + 1000);
 
-    state.advanceTime(kKingTravelMs, board);
+    engine.advanceTime(static_cast<int>(kKingTravelMs));
 
     // Tie-breaker: rook started first, so it occupies the square. The king is not captured.
-    CHECK_FALSE(state.isGameOver());
-    CHECK(hasRookAt(board, kTargetR, kTargetC));
-    CHECK(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::White));
-    CHECK(movementStateAt(board, kKingR, kKingC) == PieceMovementState::Idle);
-    CHECK_FALSE(hasPieceAt(board, kTargetR, kTargetC, PieceType::King, Color::White));
+    CHECK_FALSE(engine.isGameOver());
+    CHECK(hasRookAt(engine.board(), kTargetR, kTargetC));
+    CHECK(hasPieceAt(engine.board(), kKingR, kKingC, PieceType::King, Color::White));
+    CHECK(movementStateAt(engine, kKingR, kKingC) == TestMovementState::Idle);
+    CHECK_FALSE(hasPieceAt(engine.board(), kTargetR, kTargetC, PieceType::King, Color::White));
 }
 
 TEST_CASE("game over: king steps away before attacker arrives") {
     Board board = makeKingStepsAwayBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -861,31 +933,32 @@ TEST_CASE("game over: king steps away before attacker arrives") {
     const std::int64_t kRookTravelMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
     const std::int64_t kKingTravelMs = moveDurationMs(kKingR, kKingC, kKingDestR, kKingDestC);
 
-    CHECK_FALSE(state.isGameOver());
+    CHECK_FALSE(engine.isGameOver());
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kKingR, kKingC);
-    clickSquare(state, board, kKingDestR, kKingDestC);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, kKingR, kKingC);
+    clickSquare(engine, controller, kKingDestR, kKingDestC);
 
-    state.advanceTime(kKingTravelMs, board);
+    engine.advanceTime(static_cast<int>(kKingTravelMs));
 
-    CHECK(hasPieceAt(board, kKingDestR, kKingDestC, PieceType::King, Color::Black));
-    CHECK_FALSE(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::Black));
-    CHECK(isPieceMovingAt(board, kRookR, kRookC));
+    CHECK(hasPieceAt(engine.board(), kKingDestR, kKingDestC, PieceType::King, Color::Black));
+    CHECK_FALSE(hasPieceAt(engine.board(), kKingR, kKingC, PieceType::King, Color::Black));
+    CHECK(isPieceMovingAt(engine, kRookR, kRookC));
 
-    state.advanceTime(kRookTravelMs - kKingTravelMs, board);
+    engine.advanceTime(static_cast<int>(kRookTravelMs - kKingTravelMs));
 
-    CHECK_FALSE(state.isGameOver());
-    CHECK(hasRookAt(board, kKingR, kKingC, Color::White));
-    CHECK(hasPieceAt(board, kKingDestR, kKingDestC, PieceType::King, Color::Black));
-    CHECK_FALSE(hasPieceAt(board, kKingR, kKingC, PieceType::King, Color::Black));
+    CHECK_FALSE(engine.isGameOver());
+    CHECK(hasRookAt(engine.board(), kKingR, kKingC, Color::White));
+    CHECK(hasPieceAt(engine.board(), kKingDestR, kKingDestC, PieceType::King, Color::Black));
+    CHECK_FALSE(hasPieceAt(engine.board(), kKingR, kKingC, PieceType::King, Color::Black));
 }
 
 TEST_CASE("game over: reset clears game-over flag") {
     Board board = makeBasicKingCaptureBoard();
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     constexpr int kRookR = 0;
     constexpr int kRookC = 0;
@@ -893,15 +966,15 @@ TEST_CASE("game over: reset clears game-over flag") {
     constexpr int kKingC = 3;
     const std::int64_t kCaptureMs = moveDurationMs(kRookR, kRookC, kKingR, kKingC);
 
-    clickSquare(state, board, kRookR, kRookC);
-    clickSquare(state, board, kKingR, kKingC);
-    state.advanceTime(kCaptureMs, board);
+    clickSquare(engine, controller, kRookR, kRookC);
+    clickSquare(engine, controller, kKingR, kKingC);
+    engine.advanceTime(static_cast<int>(kCaptureMs));
 
-    CHECK(state.isGameOver());
+    CHECK(engine.isGameOver());
 
-    state.reset();
+    engine.reset();
 
-    CHECK_FALSE(state.isGameOver());
+    CHECK_FALSE(engine.isGameOver());
 }
 
 // --- Jump ("Airborne") mechanic tests ---
@@ -910,49 +983,51 @@ TEST_CASE("jump: normal landing returns to idle on the same cell") {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece::empty()});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    jumpSquare(state, board, 0, 0);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    jumpSquare(engine, controller, 0, 0);
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
     // Still airborne one tick before the timer expires.
-    state.advanceTime(GameConfig::kJumpDurationMs - 1, board);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    engine.advanceTime(static_cast<int>(GameConfig::kJumpDurationMs - 1));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
-    state.advanceTime(1, board);
-    CHECK(hasRookAt(board, 0, 0));
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+    engine.advanceTime(static_cast<int>(1));
+    CHECK(hasRookAt(engine.board(), 0, 0));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
 }
 
 TEST_CASE("jump: airborne piece captures an arriving enemy and stays put") {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece(PieceType::Rook, Color::Black)});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     // Black rook starts at t=0 heading for (0,0); a 3-cell trip arrives at t=3000.
-    clickSquare(state, board, 0, 3);
-    clickSquare(state, board, 0, 0);
-    CHECK(isPieceMovingAt(board, 0, 3));
+    clickSquare(engine, controller, 0, 3);
+    clickSquare(engine, controller, 0, 0);
+    CHECK(isPieceMovingAt(engine, 0, 3));
 
     // Jump at t=2500 so the white rook is airborne across the 3000ms arrival.
-    state.advanceTime(2500, board);
-    jumpSquare(state, board, 0, 0);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    engine.advanceTime(static_cast<int>(2500));
+    jumpSquare(engine, controller, 0, 0);
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
     // At t=3000 the enemy arrives while the defender is still airborne.
-    state.advanceTime(500, board);
-    CHECK(hasRookAt(board, 0, 0, Color::White));
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
-    CHECK_FALSE(hasRookAt(board, 0, 3, Color::Black));
-    CHECK(board.cell(0, 3).isEmpty());
+    engine.advanceTime(static_cast<int>(500));
+    CHECK(hasRookAt(engine.board(), 0, 0, Color::White));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
+    CHECK_FALSE(hasRookAt(engine.board(), 0, 3, Color::Black));
+    CHECK(engine.board().cell(pos(0, 3)).isEmpty());
 
     // The jump keeps running to its full duration, then lands in place.
-    state.advanceTime(500, board);
-    CHECK(hasRookAt(board, 0, 0, Color::White));
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+    engine.advanceTime(static_cast<int>(500));
+    CHECK(hasRookAt(engine.board(), 0, 0, Color::White));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
 }
 
 TEST_CASE("jump: friendly move in flight toward an airborne ally is cancelled") {
@@ -960,109 +1035,114 @@ TEST_CASE("jump: friendly move in flight toward an airborne ally is cancelled") 
     Board board;
     board.addRow({Piece::empty(), Piece(PieceType::King, Color::White), Piece::empty(),
                   Piece(PieceType::Rook, Color::White)});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     // King heads to the empty target X and arrives at t=1000.
-    clickSquare(state, board, 0, 1);
-    clickSquare(state, board, 0, 2);
+    clickSquare(engine, controller, 0, 1);
+    clickSquare(engine, controller, 0, 2);
 
     // At t=500, launch the rook toward X while X is still empty (arrives t=1500).
-    state.advanceTime(500, board);
-    clickSquare(state, board, 0, 3);
-    clickSquare(state, board, 0, 2);
-    CHECK(isPieceMovingAt(board, 0, 3));
+    engine.advanceTime(static_cast<int>(500));
+    clickSquare(engine, controller, 0, 3);
+    clickSquare(engine, controller, 0, 2);
+    CHECK(isPieceMovingAt(engine, 0, 3));
 
     // At t=1000 the king lands on X, then immediately jumps (airborne 1000..2000).
-    state.advanceTime(500, board);
-    CHECK(hasPieceAt(board, 0, 2, PieceType::King, Color::White));
-    jumpSquare(state, board, 0, 2);
-    CHECK(movementStateAt(board, 0, 2) == PieceMovementState::Airborne);
+    engine.advanceTime(static_cast<int>(500));
+    CHECK(hasPieceAt(engine.board(), 0, 2, PieceType::King, Color::White));
+    jumpSquare(engine, controller, 0, 2);
+    CHECK(movementStateAt(engine, 0, 2) == TestMovementState::Airborne);
 
     // At t=1500 the friendly rook arrives at X while the ally is airborne: the
     // move is cancelled and the rook remains on its origin cell.
-    state.advanceTime(500, board);
-    CHECK(hasRookAt(board, 0, 3, Color::White));
-    CHECK(movementStateAt(board, 0, 3) == PieceMovementState::Idle);
-    CHECK(hasPieceAt(board, 0, 2, PieceType::King, Color::White));
-    CHECK(movementStateAt(board, 0, 2) == PieceMovementState::Airborne);
+    engine.advanceTime(static_cast<int>(500));
+    CHECK(hasRookAt(engine.board(), 0, 3, Color::White));
+    CHECK(movementStateAt(engine, 0, 3) == TestMovementState::Idle);
+    CHECK(hasPieceAt(engine.board(), 0, 2, PieceType::King, Color::White));
+    CHECK(movementStateAt(engine, 0, 2) == TestMovementState::Airborne);
 }
 
 TEST_CASE("jump: a moving piece cannot initiate a jump") {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece::empty()});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    clickSquare(state, board, 0, 0);
-    clickSquare(state, board, 0, 2);
-    CHECK(isPieceMovingAt(board, 0, 0));
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 2);
+    CHECK(isPieceMovingAt(engine, 0, 0));
 
     // Jump request must be rejected: the piece stays Moving, not Airborne.
-    jumpSquare(state, board, 0, 0);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Moving);
+    jumpSquare(engine, controller, 0, 0);
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Moving);
 
     // The original move still completes normally.
-    state.advanceTime(moveDurationMs(0, 0, 0, 2), board);
-    CHECK(hasRookAt(board, 0, 2));
-    CHECK(movementStateAt(board, 0, 2) == PieceMovementState::Idle);
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 2)));
+    CHECK(hasRookAt(engine.board(), 0, 2));
+    CHECK(movementStateAt(engine, 0, 2) == TestMovementState::Idle);
 }
 
 TEST_CASE("jump: an empty (captured) cell cannot initiate a jump") {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece::empty()});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
     // An empty square models a captured/absent piece: nothing should happen.
-    jumpSquare(state, board, 0, 1);
-    CHECK(board.cell(0, 1).isEmpty());
-    CHECK(movementStateAt(board, 0, 1) == PieceMovementState::Idle);
+    jumpSquare(engine, controller, 0, 1);
+    CHECK(engine.board().cell(pos(0, 1)).isEmpty());
+    CHECK(movementStateAt(engine, 0, 1) == TestMovementState::Idle);
 }
 
 TEST_CASE("jump: an airborne piece cannot move") {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece::empty()});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    jumpSquare(state, board, 0, 0);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    jumpSquare(engine, controller, 0, 0);
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
     // Attempting to move the airborne piece must be rejected.
-    clickSquare(state, board, 0, 0);
-    clickSquare(state, board, 0, 2);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
-    CHECK(board.cell(0, 2).isEmpty());
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 2);
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
+    CHECK(engine.board().cell(pos(0, 2)).isEmpty());
 
     // It simply lands in place when the timer expires.
-    state.advanceTime(GameConfig::kJumpDurationMs, board);
-    CHECK(hasRookAt(board, 0, 0));
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+    engine.advanceTime(static_cast<int>(GameConfig::kJumpDurationMs));
+    CHECK(hasRookAt(engine.board(), 0, 0));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
 }
 
 TEST_CASE("jump: cannot start a second jump while already airborne") {
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
                   Piece::empty()});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    jumpSquare(state, board, 0, 0);  // airborne 0..1000
+    jumpSquare(engine, controller, 0, 0);  // airborne 0..1000
 
     // Halfway through, a second jump request must be ignored (does not extend it).
-    state.advanceTime(500, board);
-    jumpSquare(state, board, 0, 0);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    engine.advanceTime(static_cast<int>(500));
+    jumpSquare(engine, controller, 0, 0);
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
     // If the second jump had registered (500..1500) the piece would still be
     // airborne at t=1000; instead the original jump lands exactly on time.
-    state.advanceTime(500, board);
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
-    CHECK(hasRookAt(board, 0, 0));
+    engine.advanceTime(static_cast<int>(500));
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
+    CHECK(hasRookAt(engine.board(), 0, 0));
 }
 
 TEST_CASE("jump: enemy arriving exactly at the boundary tick is jump-captured") {
@@ -1071,24 +1151,25 @@ TEST_CASE("jump: enemy arriving exactly at the boundary tick is jump-captured") 
     Board board;
     board.addRow({Piece(PieceType::Rook, Color::White), Piece(PieceType::Rook, Color::Black),
                   Piece::empty(), Piece::empty()});
-    GameState state;
-    state.reset();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
 
-    jumpSquare(state, board, 0, 0);  // white airborne 0..1000
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Airborne);
+    jumpSquare(engine, controller, 0, 0);  // white airborne 0..1000
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
     // Black rook (0,1) -> (0,0) is a 1-cell trip, arriving exactly at t=1000.
-    clickSquare(state, board, 0, 1);
-    clickSquare(state, board, 0, 0);
-    CHECK(isPieceMovingAt(board, 0, 1));
+    clickSquare(engine, controller, 0, 1);
+    clickSquare(engine, controller, 0, 0);
+    CHECK(isPieceMovingAt(engine, 0, 1));
 
-    state.advanceTime(GameConfig::kJumpDurationMs, board);
+    engine.advanceTime(static_cast<int>(GameConfig::kJumpDurationMs));
 
     // The airborne white rook captured the arriving black rook, then landed.
-    CHECK(hasRookAt(board, 0, 0, Color::White));
-    CHECK_FALSE(hasRookAt(board, 0, 0, Color::Black));
-    CHECK(board.cell(0, 1).isEmpty());
-    CHECK(movementStateAt(board, 0, 0) == PieceMovementState::Idle);
+    CHECK(hasRookAt(engine.board(), 0, 0, Color::White));
+    CHECK_FALSE(hasRookAt(engine.board(), 0, 0, Color::Black));
+    CHECK(engine.board().cell(pos(0, 1)).isEmpty());
+    CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
 }
 
 TEST_CASE("jump: command uses pixel coordinates like click") {
