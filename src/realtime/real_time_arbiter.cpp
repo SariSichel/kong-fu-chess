@@ -76,6 +76,11 @@ void resolveMoveArrival(model::Board& board, const realtime::Motion& motion,
 
     board.movePiece(motion.source, motion.destination);
     arrivedThisTick.push_back(motion.destination);
+
+    model::Piece& arrived = board.cell(motion.destination);
+    if (arrived.type() == model::PieceType::Pawn) {
+        arrived.markMoved();
+    }
     promotePawnIfEligible(board, motion.destination);
 }
 

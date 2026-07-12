@@ -4,11 +4,21 @@
 
 namespace input {
 
+namespace {
+
+int cellIndex(int pixel, int cellSize) {
+    return (pixel - cellSize / 2) / cellSize;
+}
+
+}  // namespace
+
 model::Position BoardMapper::toPosition(int x, int y) {
     if (x < 0 || y < 0) {
         return model::Position(-1, -1);
     }
-    return model::Position(y / GameConfig::kClickCellSize, x / GameConfig::kClickCellSize);
+
+    const int cellSize = GameConfig::kClickCellSize;
+    return model::Position(cellIndex(y, cellSize), cellIndex(x, cellSize));
 }
 
 }  // namespace input

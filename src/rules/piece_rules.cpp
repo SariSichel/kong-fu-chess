@@ -81,9 +81,13 @@ bool canPawnMove(const model::Board& board, const model::Position& from, const m
     }
 
     if (dr == 2 * forwardDr && dc == 0) {
-        const int startRow =
-            (piece.color() == model::Color::White) ? static_cast<int>(board.rows()) - 1 : 0;
-        if (from.row != startRow) {
+        if (piece.hasMoved()) {
+            return false;
+        }
+        const int homeRank = (piece.color() == model::Color::White)
+                                 ? static_cast<int>(board.rows()) - 2
+                                 : 1;
+        if (from.row != homeRank) {
             return false;
         }
         const int intermediateR = from.row + forwardDr;

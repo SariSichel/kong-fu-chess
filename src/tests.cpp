@@ -226,7 +226,7 @@ TEST_CASE("parse errors") {
 TEST_CASE("basic click and command integration") {
     CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 150\nwait "
                    "1000\nprint board") == ". . .\n. wK .\n. . .\n");
-    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 150 150\nclick 250 250\nwait "
+    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 150 150\nclick 250 150\nwait "
                    "1000\nprint board") == "wK . .\n. . .\n. . .\n");
     CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 350 50\nclick -10 50\nprint "
                    "board") == "wK . .\n. . .\n. . .\n");
@@ -300,7 +300,7 @@ TEST_CASE("Pawn movement") {
 // --- Pawn advanced rules: double move, path clearance, promotion ---
 
 TEST_CASE("pawn: valid single step forward (white, no promotion)") {
-    // 3-row board => white start row is rows()-1 == 2. A single step is always legal;
+    // 3-row board => white double-step start row is rows()-2 == 1. A single step is always legal;
     // the destination (row 1) is not the last row, so no promotion happens.
     CHECK(runInput(" Board:\n. .\n. .\nwP .\nCommands:\nclick 50 250\nclick 50 150\nwait "
                    "1000\nprint board") == ". .\nwP .\n. .\n");
@@ -313,34 +313,33 @@ TEST_CASE("pawn: valid single step forward (black, no promotion)") {
 }
 
 TEST_CASE("pawn: valid double step from start row (white)") {
-    // 5-row board => white start row is the bottom row (rows()-1 == 4). Pawn jumps
-    // 4 -> 2 (not the last row). Double-step duration is 2 * kMoveDurationMs.
-    CHECK(runInput(" Board:\n. .\n. .\n. .\n. .\nwP .\nCommands:\nclick 50 450\nclick 50 "
-                   "250\nwait 2000\nprint board") == ". .\n. .\nwP .\n. .\n. .\n");
+    // 5-row board => white double-step start row is rows()-2 == 3. Pawn jumps 3 -> 1.
+    CHECK(runInput(" Board:\n. .\n. .\n. .\nwP .\n. .\nCommands:\nclick 50 350\nclick 50 "
+                   "150\nwait 2000\nprint board") == ". .\nwP .\n. .\n. .\n. .\n");
 }
 
 TEST_CASE("pawn: valid double step from start row (black)") {
-    // 5-row board => black start row is the top row (0). Pawn jumps 0 -> 2 (not last row).
-    CHECK(runInput(" Board:\nbP .\n. .\n. .\n. .\n. .\nCommands:\nclick 50 50\nclick 50 "
-                   "250\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\n. .\n");
+    // 5-row board => black double-step start row is 1. Pawn jumps 1 -> 3.
+    CHECK(runInput(" Board:\n. .\nbP .\n. .\n. .\n. .\nCommands:\nclick 50 150\nclick 50 "
+                   "350\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\n. .\n");
 }
 
 TEST_CASE("pawn: double step blocked by intermediate cell is rejected") {
-    // White pawn on the start row (row 4). Intermediate cell (row 3) is occupied, so
-    // the 4 -> 2 double step must be rejected and nothing on the board changes.
-    CHECK(runInput(" Board:\n. .\n. .\n. .\nbP .\nwP .\nCommands:\nclick 50 450\nclick 50 "
-                   "250\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\nwP .\n");
+    // White pawn on the start row (row 3). Intermediate cell (row 2) is occupied, so
+    // the 3 -> 1 double step must be rejected and nothing on the board changes.
+    CHECK(runInput(" Board:\n. .\n. .\n. .\nbP .\nwP .\nCommands:\nclick 50 350\nclick 50 "
+                   "150\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\nwP .\n");
 }
 
 TEST_CASE("pawn: double step blocked by occupied target is rejected") {
-    // White pawn on the start row (row 4). Target cell (row 2) is occupied, so the
-    // 4 -> 2 double step must be rejected and nothing on the board changes.
-    CHECK(runInput(" Board:\n. .\n. .\nbP .\n. .\nwP .\nCommands:\nclick 50 450\nclick 50 "
-                   "250\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\nwP .\n");
+    // White pawn on the start row (row 3). Target cell (row 1) is occupied, so the
+    // 3 -> 1 double step must be rejected and nothing on the board changes.
+    CHECK(runInput(" Board:\n. .\n. .\nbP .\n. .\nwP .\nCommands:\nclick 50 350\nclick 50 "
+                   "150\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\nwP .\n");
 }
 
 TEST_CASE("pawn: double step from a non-start row is rejected") {
-    // 5-row board => white start row is 4. Pawn sits on row 2 (not start row), so a
+    // 5-row board => white double-step start row is 3. Pawn sits on row 2, so a
     // 2 -> 0 double step is illegal and the pawn stays put.
     CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\n. .\nCommands:\nclick 50 250\nclick 50 "
                    "50\nwait 2000\nprint board") == ". .\n. .\nwP .\n. .\n. .\n");
@@ -359,17 +358,25 @@ TEST_CASE("pawn: single-step promotion into final row (black)") {
 }
 
 TEST_CASE("pawn: double-step promotion into final row (white)") {
-    // 3-row board => white start row is rows()-1 == 2 and the last row is 0. The 2 -> 0
-    // double step is legal and lands directly on the promotion row.
-    CHECK(runInput(" Board:\n. .\n. .\nwP .\nCommands:\nclick 50 250\nclick 50 50\nwait "
-                   "2000\nprint board") == "wQ .\n. .\n. .\n");
+    // 4-row 2-col board uses standard mapping. White double-step start row is rows()-2 == 2.
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\nCommands:\nclick 50 250\nclick 50 50\nwait "
+                   "2000\nprint board") == "wQ .\n. .\n. .\n. .\n");
 }
 
 TEST_CASE("pawn: double-step promotion into final row (black)") {
-    // 3-row board => black start row is 0 and the last row is rows()-1 == 2. The 0 -> 2
-    // double step is legal and lands directly on the promotion row.
-    CHECK(runInput(" Board:\nbP .\n. .\n. .\nCommands:\nclick 50 50\nclick 50 250\nwait "
-                   "2000\nprint board") == ". .\n. .\nbQ .\n");
+    // 4-row 2-col board uses standard mapping. Black double-step start row is 1.
+    CHECK(runInput(" Board:\n. .\nbP .\n. .\n. .\nCommands:\nclick 50 150\nclick 50 350\nwait "
+                   "2000\nprint board") == ". .\n. .\n. .\nbQ .\n");
+}
+
+TEST_CASE("pawn: VPL white double from start on 4x3 board") {
+    CHECK(runInput(" Board:\n. . .\n. . .\n. wP .\n. . .\nCommands:\nclick 150 250\nclick 150 "
+                   "50\nwait 2000\nprint board") == ". wQ .\n. . .\n. . .\n. . .\n");
+}
+
+TEST_CASE("pawn: VPL black double from start on 4x3 board") {
+    CHECK(runInput(" Board:\n. . .\n. bP .\n. . .\n. . .\nCommands:\nclick 150 150\nclick 150 "
+                   "350\nwait 2000\nprint board") == ". . .\n. . .\n. . .\n. bQ .\n");
 }
 
 TEST_CASE("pawn: promotion happens via GameState arrival (state-level check)") {
@@ -410,7 +417,7 @@ TEST_CASE("pawn: invalid double step leaves the board completely unchanged") {
     input::Controller controller;
     copyBoardIntoEngine(engine, board);
 
-    // Pawn at row 2 is NOT on the start row (rows()-1 == 4), so a 2 -> 0 jump is invalid.
+    // Pawn at row 2 is NOT on the double-step start row (rows()-2 == 3), so a 2 -> 0 jump is invalid.
     clickSquare(engine, controller, 2, 0);
     clickSquare(engine, controller, 0, 0);
 
@@ -444,7 +451,7 @@ TEST_CASE("architecture gap: concurrent pending moves") {
 }
 
 TEST_CASE("architecture gap: print before wait shows source") {
-    CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nprint board") ==
+    CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 150\nprint board") ==
           "wR . .\n");
 }
 

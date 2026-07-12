@@ -15,12 +15,11 @@ void Controller::handleClick(engine::GameEngine& gameEngine, int x, int y) {
         return;
     }
 
+    model::Board& board = gameEngine.board();
     const model::Position clicked = BoardMapper::toPosition(x, y);
     if (clicked.row < 0) {
         return;
     }
-
-    model::Board& board = gameEngine.board();
     if (!board.inBounds(clicked)) {
         return;
     }

@@ -38,10 +38,14 @@ public:
     }
     int cooldownRemainingMs() const { return cooldown_remaining_ms_; }
 
+    bool hasMoved() const { return has_moved_; }
+    void markMoved() { has_moved_ = true; }
+
 private:
     PieceType type_ = PieceType::Empty;
     Color color_ = Color::White;
     int cooldown_remaining_ms_ = 0;
+    bool has_moved_ = false;
 };
 
 }  // namespace model
