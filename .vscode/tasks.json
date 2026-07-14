@@ -11,9 +11,9 @@
                 "-B",
                 "${workspaceFolder}/build",
                 "-G",
-                "MinGW Makefiles",
-                "-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++",
-                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+                "Visual Studio 18 2026",
+                "-A",
+                "x64"
             ],
             "group": "build",
             "problemMatcher": []
@@ -24,7 +24,9 @@
             "command": "cmake",
             "args": [
                 "--build",
-                "${workspaceFolder}/build"
+                "${workspaceFolder}/build",
+                "--config",
+                "Release"
             ],
             "group": {
                 "kind": "build",
@@ -32,7 +34,6 @@
             },
             "dependsOn": "CMake: Configure",
             "problemMatcher": [
-                "$gcc",
                 "$msCompile"
             ]
         }

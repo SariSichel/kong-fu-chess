@@ -3,3 +3,5 @@ CompileFlags:
     - -std=c++17
     - -Wall
     - -Wextra
+    - -IC:/Users/saris/OneDrive/Documents/bootcamp/kong-fu-chess/src
+    - -IC:/Users/saris/OneDrive/Documents/bootcamp/CTD26/cpp/OpenCV_451/include
