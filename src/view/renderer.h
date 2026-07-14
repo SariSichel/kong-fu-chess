@@ -4,7 +4,9 @@
 
 #include "../model/board.h"
 
-class Img;
+namespace cv {
+class Mat;
+}
 
 namespace view {
 
@@ -13,7 +15,7 @@ public:
     void render(const model::Board& board, const std::string& boardImagePath);
 
 private:
-    void drawPieces(Img& canvas, const model::Board& board);
+    void drawPieces(cv::Mat& canvas, const model::Board& board);
 };
 
 }  // namespace view
