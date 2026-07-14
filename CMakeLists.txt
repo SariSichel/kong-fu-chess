@@ -30,6 +30,8 @@ add_executable(kong_fu_chess
     src/main.cpp
     ${KONG_FU_CHESS_SOURCES}
     src/view/img.cpp
+    src/view/piece_sprite.cpp
+    src/view/render_helpers.cpp
     src/view/renderer.cpp
 )
 
