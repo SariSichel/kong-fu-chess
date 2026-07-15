@@ -10,6 +10,7 @@
 
 #include "constants.h"
 #include "engine/game_engine.h"
+#include "input/board_mapper.h"
 #include "input/controller.h"
 #include "io/board_parser.h"
 #include "io/board_printer.h"
@@ -46,16 +47,22 @@ std::string runInput(const std::string& input) {
     return out.str();
 }
 
+int cellCenterX(int col) {
+    return GameConfig::kBoardOriginX + col * GameConfig::kClickCellSize +
+           GameConfig::kClickCellSize / 2;
+}
+
+int cellCenterY(int row) {
+    return GameConfig::kBoardOriginY + row * GameConfig::kClickCellSize +
+           GameConfig::kClickCellSize / 2;
+}
+
 void clickSquare(engine::GameEngine& engine, input::Controller& controller, int row, int col) {
-    const int x = col * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
-    const int y = row * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
-    controller.handleClick(engine, x, y);
+    controller.handleClick(engine, cellCenterX(col), cellCenterY(row));
 }
 
 void jumpSquare(engine::GameEngine& engine, input::Controller& controller, int row, int col) {
-    const int x = col * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
-    const int y = row * GameConfig::kClickCellSize + GameConfig::kClickCellSize / 2;
-    controller.handleJump(engine, x, y);
+    controller.handleJump(engine, cellCenterX(col), cellCenterY(row));
 }
 
 void copyBoardIntoEngine(engine::GameEngine& engine, const Board& source) {
@@ -203,6 +210,17 @@ constexpr std::int64_t kMoveBToCDurationMs = 1 * GameConfig::kMoveDurationMs;
 
 }  // namespace
 
+TEST_CASE("board_mapper: maps window pixels to grid positions using board origin") {
+    CHECK(input::BoardMapper::toPosition(cellCenterX(0), cellCenterY(0)) == pos(0, 0));
+    CHECK(input::BoardMapper::toPosition(cellCenterX(1), cellCenterY(0)) == pos(0, 1));
+    CHECK(input::BoardMapper::toPosition(cellCenterX(0), cellCenterY(1)) == pos(1, 0));
+    CHECK(input::BoardMapper::toPosition(cellCenterX(2), cellCenterY(3)) == pos(3, 2));
+
+    CHECK(input::BoardMapper::toPosition(-1, cellCenterY(0)) == pos(-1, -1));
+    CHECK(input::BoardMapper::toPosition(cellCenterX(0), -1) == pos(-1, -1));
+    CHECK(input::BoardMapper::toPosition(5, 5) == pos(-1, -1));
+}
+
 TEST_CASE("board parsing and printing") {
     Board board;
 
@@ -224,76 +242,76 @@ TEST_CASE("parse errors") {
 }
 
 TEST_CASE("basic click and command integration") {
-    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 150\nwait "
+    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 161 164\nwait "
                    "1000\nprint board") == ". . .\n. wK .\n. . .\n");
-    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 150 150\nclick 250 150\nwait "
+    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 161 164\nclick 261 164\nwait "
                    "1000\nprint board") == "wK . .\n. . .\n. . .\n");
-    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 350 50\nclick -10 50\nprint "
+    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 361 64\nclick 1 64\nprint "
                    "board") == "wK . .\n. . .\n. . .\n");
-    CHECK(runInput(" Board:\nwR . wK\n. . .\nCommands:\nclick 50 50\nclick 250 50\nclick 250 "
-                   "150\nwait 1000\nprint board") == "wR . .\n. . wK\n");
+    CHECK(runInput(" Board:\nwR . wK\n. . .\nCommands:\nclick 61 64\nclick 261 64\nclick 261 "
+                   "164\nwait 1000\nprint board") == "wR . .\n. . wK\n");
     CHECK(runInput(" Board:\nwK xZ\n. .\nCommands:\nprint board") == "ERROR UNKNOWN_TOKEN");
     CHECK(runInput(" Board:\nwK . .\n. bK\nCommands:\nprint board") ==
           "ERROR ROW_WIDTH_MISMATCH");
 }
 
 TEST_CASE("King movement") {
-    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 50\nwait "
+    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 161 64\nwait "
                    "1000\nprint board") == ". wK .\n. . .\n. . .\n");
-    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
+    CHECK(runInput(" Board:\nwK . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 261 64\nwait "
                    "1000\nprint board") == "wK . .\n. . .\n. . .\n");
 }
 
 TEST_CASE("Rook movement") {
-    CHECK(runInput(" Board:\nwR . . .\n. . . .\nCommands:\nclick 50 50\nclick 350 50\nwait "
+    CHECK(runInput(" Board:\nwR . . .\n. . . .\nCommands:\nclick 61 64\nclick 361 64\nwait "
                    "3000\nprint board") == ". . . wR\n. . . .\n");
-    CHECK(runInput(" Board:\nwR . .\n. . .\nCommands:\nclick 50 50\nclick 150 150\nwait "
+    CHECK(runInput(" Board:\nwR . .\n. . .\nCommands:\nclick 61 64\nclick 161 164\nwait "
                    "1000\nprint board") == "wR . .\n. . .\n");
-    CHECK(runInput(" Board:\nwR wP . .\n. . . .\nCommands:\nclick 50 50\nclick 350 50\nwait "
+    CHECK(runInput(" Board:\nwR wP . .\n. . . .\nCommands:\nclick 61 64\nclick 361 64\nwait "
                    "1000\nprint board") == "wR wP . .\n. . . .\n");
-    CHECK(runInput(" Board:\nwR . . bP\nCommands:\nclick 50 50\nclick 350 50\nwait 3000\nprint "
+    CHECK(runInput(" Board:\nwR . . bP\nCommands:\nclick 61 64\nclick 361 64\nwait 3000\nprint "
                    "board") == ". . . wR\n");
-    CHECK(runInput(" Board:\nwR . . wP\nCommands:\nclick 50 50\nclick 350 50\nwait 1000\nprint "
+    CHECK(runInput(" Board:\nwR . . wP\nCommands:\nclick 61 64\nclick 361 64\nwait 1000\nprint "
                    "board") == "wR . . wP\n");
 }
 
 TEST_CASE("Bishop movement") {
-    CHECK(runInput(" Board:\nwB . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait "
+    CHECK(runInput(" Board:\nwB . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 261 264\nwait "
                    "2000\nprint board") == ". . .\n. . .\n. . wB\n");
-    CHECK(runInput(" Board:\nwB . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
+    CHECK(runInput(" Board:\nwB . .\n. . .\nCommands:\nclick 61 64\nclick 261 64\nwait "
                    "1000\nprint board") == "wB . .\n. . .\n");
-    CHECK(runInput(" Board:\nwB . .\n. wP .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait "
+    CHECK(runInput(" Board:\nwB . .\n. wP .\n. . .\nCommands:\nclick 61 64\nclick 261 264\nwait "
                    "1000\nprint board") == "wB . .\n. wP .\n. . .\n");
 }
 
 TEST_CASE("Queen movement") {
-    CHECK(runInput(" Board:\nwQ . . .\n. . . .\nCommands:\nclick 50 50\nclick 350 50\nwait "
+    CHECK(runInput(" Board:\nwQ . . .\n. . . .\nCommands:\nclick 61 64\nclick 361 64\nwait "
                    "3000\nprint board") == ". . . wQ\n. . . .\n");
-    CHECK(runInput(" Board:\nwQ . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 250\nwait "
+    CHECK(runInput(" Board:\nwQ . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 161 264\nwait "
                    "1000\nprint board") == "wQ . .\n. . .\n. . .\n");
 }
 
 TEST_CASE("Knight movement") {
-    CHECK(runInput(" Board:\nwN . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 150 250\nwait "
+    CHECK(runInput(" Board:\nwN . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 161 264\nwait "
                    "2000\nprint board") == ". . .\n. . .\n. wN .\n");
-    CHECK(runInput(" Board:\nwN . .\n. . .\nCommands:\nclick 50 50\nclick 250 50\nwait "
+    CHECK(runInput(" Board:\nwN . .\n. . .\nCommands:\nclick 61 64\nclick 261 64\nwait "
                    "1000\nprint board") == "wN . .\n. . .\n");
-    CHECK(runInput(" Board:\nwN . wP .\n. . . .\n. . . .\nCommands:\nclick 50 50\nclick 150 "
-                   "250\nwait 2000\nprint board") == ". . wP .\n. . . .\n. wN . .\n");
-    CHECK(runInput(" Board:\nwN . .\n. . bP\n. . .\nCommands:\nclick 50 50\nclick 250 150\nwait "
+    CHECK(runInput(" Board:\nwN . wP .\n. . . .\n. . . .\nCommands:\nclick 61 64\nclick 161 "
+                   "264\nwait 2000\nprint board") == ". . wP .\n. . . .\n. wN . .\n");
+    CHECK(runInput(" Board:\nwN . .\n. . bP\n. . .\nCommands:\nclick 61 64\nclick 261 164\nwait "
                    "2000\nprint board") == ". . .\n. . wN\n. . .\n");
 }
 
 TEST_CASE("Pawn movement") {
-    CHECK(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
+    CHECK(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 61 164\nclick 61 64\nwait "
                    "1000\nprint board") == "wQ . .\n. . .\n. . .\n");
-    CHECK(runInput(" Board:\n. . .\n. . .\nwP . .\nCommands:\nclick 50 250\nclick 50 50\nwait "
+    CHECK(runInput(" Board:\n. . .\n. . .\nwP . .\nCommands:\nclick 61 264\nclick 61 64\nwait "
                    "1000\nprint board") == ". . .\n. . .\nwP . .\n");
-    CHECK(runInput(" Board:\nbP . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 50 50\nwait "
+    CHECK(runInput(" Board:\nbP . .\nwP . .\n. . .\nCommands:\nclick 61 164\nclick 61 64\nwait "
                    "1000\nprint board") == "bP . .\nwP . .\n. . .\n");
-    CHECK(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
+    CHECK(runInput(" Board:\n. . .\nwP . .\n. . .\nCommands:\nclick 61 164\nclick 161 64\nwait "
                    "1000\nprint board") == ". . .\nwP . .\n. . .\n");
-    CHECK(runInput(" Board:\n. bP .\nwP . .\n. . .\nCommands:\nclick 50 150\nclick 150 50\nwait "
+    CHECK(runInput(" Board:\n. bP .\nwP . .\n. . .\nCommands:\nclick 61 164\nclick 161 64\nwait "
                    "1000\nprint board") == ". wQ .\n. . .\n. . .\n");
 }
 
@@ -302,81 +320,81 @@ TEST_CASE("Pawn movement") {
 TEST_CASE("pawn: valid single step forward (white, no promotion)") {
     // 3-row board => white double-step start row is rows()-2 == 1. A single step is always legal;
     // the destination (row 1) is not the last row, so no promotion happens.
-    CHECK(runInput(" Board:\n. .\n. .\nwP .\nCommands:\nclick 50 250\nclick 50 150\nwait "
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\nCommands:\nclick 61 264\nclick 61 164\nwait "
                    "1000\nprint board") == ". .\nwP .\n. .\n");
 }
 
 TEST_CASE("pawn: valid single step forward (black, no promotion)") {
     // Black moves down (increasing row). Pawn at row 0 steps to row 1 (not last row).
-    CHECK(runInput(" Board:\nbP .\n. .\n. .\nCommands:\nclick 50 50\nclick 50 150\nwait "
+    CHECK(runInput(" Board:\nbP .\n. .\n. .\nCommands:\nclick 61 64\nclick 61 164\nwait "
                    "1000\nprint board") == ". .\nbP .\n. .\n");
 }
 
 TEST_CASE("pawn: valid double step from start row (white)") {
     // 5-row board => white double-step start row is rows()-2 == 3. Pawn jumps 3 -> 1.
-    CHECK(runInput(" Board:\n. .\n. .\n. .\nwP .\n. .\nCommands:\nclick 50 350\nclick 50 "
-                   "150\nwait 2000\nprint board") == ". .\nwP .\n. .\n. .\n. .\n");
+    CHECK(runInput(" Board:\n. .\n. .\n. .\nwP .\n. .\nCommands:\nclick 61 364\nclick 61 "
+                   "164\nwait 2000\nprint board") == ". .\nwP .\n. .\n. .\n. .\n");
 }
 
 TEST_CASE("pawn: valid double step from start row (black)") {
     // 5-row board => black double-step start row is 1. Pawn jumps 1 -> 3.
-    CHECK(runInput(" Board:\n. .\nbP .\n. .\n. .\n. .\nCommands:\nclick 50 150\nclick 50 "
-                   "350\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\n. .\n");
+    CHECK(runInput(" Board:\n. .\nbP .\n. .\n. .\n. .\nCommands:\nclick 61 164\nclick 61 "
+                   "364\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\n. .\n");
 }
 
 TEST_CASE("pawn: double step blocked by intermediate cell is rejected") {
     // White pawn on the start row (row 3). Intermediate cell (row 2) is occupied, so
     // the 3 -> 1 double step must be rejected and nothing on the board changes.
-    CHECK(runInput(" Board:\n. .\n. .\n. .\nbP .\nwP .\nCommands:\nclick 50 350\nclick 50 "
-                   "150\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\nwP .\n");
+    CHECK(runInput(" Board:\n. .\n. .\n. .\nbP .\nwP .\nCommands:\nclick 61 364\nclick 61 "
+                   "164\nwait 2000\nprint board") == ". .\n. .\n. .\nbP .\nwP .\n");
 }
 
 TEST_CASE("pawn: double step blocked by occupied target is rejected") {
     // White pawn on the start row (row 3). Target cell (row 1) is occupied, so the
     // 3 -> 1 double step must be rejected and nothing on the board changes.
-    CHECK(runInput(" Board:\n. .\n. .\nbP .\n. .\nwP .\nCommands:\nclick 50 350\nclick 50 "
-                   "150\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\nwP .\n");
+    CHECK(runInput(" Board:\n. .\n. .\nbP .\n. .\nwP .\nCommands:\nclick 61 364\nclick 61 "
+                   "164\nwait 2000\nprint board") == ". .\n. .\nbP .\n. .\nwP .\n");
 }
 
 TEST_CASE("pawn: double step from a non-start row is rejected") {
     // 5-row board => white double-step start row is 3. Pawn sits on row 2, so a
     // 2 -> 0 double step is illegal and the pawn stays put.
-    CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\n. .\nCommands:\nclick 50 250\nclick 50 "
-                   "50\nwait 2000\nprint board") == ". .\n. .\nwP .\n. .\n. .\n");
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\n. .\nCommands:\nclick 61 264\nclick 61 "
+                   "64\nwait 2000\nprint board") == ". .\n. .\nwP .\n. .\n. .\n");
 }
 
 TEST_CASE("pawn: single-step promotion into final row (white)") {
     // White pawn one step from the top row (row 0) promotes to a Queen on arrival.
-    CHECK(runInput(" Board:\n. .\nwP .\nCommands:\nclick 50 150\nclick 50 50\nwait "
+    CHECK(runInput(" Board:\n. .\nwP .\nCommands:\nclick 61 164\nclick 61 64\nwait "
                    "1000\nprint board") == "wQ .\n. .\n");
 }
 
 TEST_CASE("pawn: single-step promotion into final row (black)") {
     // Black pawn one step from the bottom row (last row) promotes to a Queen.
-    CHECK(runInput(" Board:\nbP .\n. .\nCommands:\nclick 50 50\nclick 50 150\nwait "
+    CHECK(runInput(" Board:\nbP .\n. .\nCommands:\nclick 61 64\nclick 61 164\nwait "
                    "1000\nprint board") == ". .\nbQ .\n");
 }
 
 TEST_CASE("pawn: double-step promotion into final row (white)") {
     // 4-row 2-col board uses standard mapping. White double-step start row is rows()-2 == 2.
-    CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\nCommands:\nclick 50 250\nclick 50 50\nwait "
+    CHECK(runInput(" Board:\n. .\n. .\nwP .\n. .\nCommands:\nclick 61 264\nclick 61 64\nwait "
                    "2000\nprint board") == "wQ .\n. .\n. .\n. .\n");
 }
 
 TEST_CASE("pawn: double-step promotion into final row (black)") {
     // 4-row 2-col board uses standard mapping. Black double-step start row is 1.
-    CHECK(runInput(" Board:\n. .\nbP .\n. .\n. .\nCommands:\nclick 50 150\nclick 50 350\nwait "
+    CHECK(runInput(" Board:\n. .\nbP .\n. .\n. .\nCommands:\nclick 61 164\nclick 61 364\nwait "
                    "2000\nprint board") == ". .\n. .\n. .\nbQ .\n");
 }
 
 TEST_CASE("pawn: VPL white double from start on 4x3 board") {
-    CHECK(runInput(" Board:\n. . .\n. . .\n. wP .\n. . .\nCommands:\nclick 150 250\nclick 150 "
-                   "50\nwait 2000\nprint board") == ". wQ .\n. . .\n. . .\n. . .\n");
+    CHECK(runInput(" Board:\n. . .\n. . .\n. wP .\n. . .\nCommands:\nclick 161 264\nclick 161 "
+                   "64\nwait 2000\nprint board") == ". wQ .\n. . .\n. . .\n. . .\n");
 }
 
 TEST_CASE("pawn: VPL black double from start on 4x3 board") {
-    CHECK(runInput(" Board:\n. . .\n. bP .\n. . .\n. . .\nCommands:\nclick 150 150\nclick 150 "
-                   "350\nwait 2000\nprint board") == ". . .\n. . .\n. . .\n. bQ .\n");
+    CHECK(runInput(" Board:\n. . .\n. bP .\n. . .\n. . .\nCommands:\nclick 161 164\nclick 161 "
+                   "364\nwait 2000\nprint board") == ". . .\n. . .\n. . .\n. bQ .\n");
 }
 
 TEST_CASE("pawn: promotion happens via GameState arrival (state-level check)") {
@@ -432,26 +450,26 @@ TEST_CASE("pawn: invalid double step leaves the board completely unchanged") {
 }
 
 TEST_CASE("timed movement before and after arrival") {
-    CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nwait 1000\nprint "
+    CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 61 64\nclick 261 64\nwait 1000\nprint "
                    "board\nwait 1000\nprint board") == "wR . .\n. . wR\n");
-    CHECK(runInput(" Board:\nwB . .\n. . .\n. . .\nCommands:\nclick 50 50\nclick 250 250\nwait 1000\n"
+    CHECK(runInput(" Board:\nwB . .\n. . .\n. . .\nCommands:\nclick 61 64\nclick 261 264\nwait 1000\n"
                    "print board\nwait 1000\nprint board") ==
           "wB . .\n. . .\n. . .\n. . .\n. . .\n. . wB\n");
 }
 
 TEST_CASE("enemy collision via click integration") {
-    CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 350 50\nclick 50 50\nclick 50 50\nclick "
-                   "350 50\nwait 3000\nprint board") == "bR . . .\n");
+    CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 361 64\nclick 61 64\nclick 61 64\nclick "
+                   "361 64\nwait 3000\nprint board") == "bR . . .\n");
 }
 
 TEST_CASE("architecture gap: concurrent pending moves") {
-    CHECK(runInput(" Board:\nwR . .\nwK . .\nCommands:\nclick 50 50\nclick 250 50\nclick 50 "
-                   "150\nclick 150 150\nwait 1000\nprint board\nwait 1000\nprint board") ==
+    CHECK(runInput(" Board:\nwR . .\nwK . .\nCommands:\nclick 61 64\nclick 261 64\nclick 61 "
+                   "164\nclick 161 164\nwait 1000\nprint board\nwait 1000\nprint board") ==
            "wR . .\n. wK .\n. . wR\n. wK .\n");
 }
 
 TEST_CASE("architecture gap: print before wait shows source") {
-    CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 150\nprint board") ==
+    CHECK(runInput(" Board:\nwR . .\nCommands:\nclick 61 64\nclick 261 164\nprint board") ==
           "wR . .\n");
 }
 
@@ -1180,16 +1198,16 @@ TEST_CASE("jump: enemy arriving exactly at the boundary tick is jump-captured") 
 }
 
 TEST_CASE("jump: command uses pixel coordinates like click") {
-    // 'jump 50 150' -> x=50 (col 0), y=150 (row 1): the white king jumps in place
+    // 'jump 61 164' -> col 0 row 1 (window pixel center of that cell)
     // and captures the black rook that arrives on the exact boundary tick.
-    CHECK(runInput(" Board:\n. . .\nwK bR .\n. . .\nCommands:\njump 50 150\nclick 150 150\n"
-                   "click 50 150\nwait 1000\nprint board") == ". . .\nwK . .\n. . .\n");
+    CHECK(runInput(" Board:\n. . .\nwK bR .\n. . .\nCommands:\njump 61 164\nclick 161 164\n"
+                   "click 61 164\nwait 1000\nprint board") == ". . .\nwK . .\n. . .\n");
 }
 
 TEST_CASE("jump: command integration via the command processor") {
     // Black rook races 3 cells toward the white rook (arrives t=3000); the white
     // rook jumps at t=2500 and destroys the arriving enemy while airborne.
-    CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 350 50\nclick 50 50\nwait 2500\n"
-                   "jump 50 50\nwait 500\nprint board\nwait 500\nprint board") ==
+    CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 361 64\nclick 61 64\nwait 2500\n"
+                   "jump 61 64\nwait 500\nprint board\nwait 500\nprint board") ==
           "wR . . .\nwR . . .\n");
 }
