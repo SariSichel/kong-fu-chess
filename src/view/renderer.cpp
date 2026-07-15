@@ -1,9 +1,13 @@
 #include "renderer.h"
 
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <stdexcept>
 #include <string>
 
 #include "../constants.h"
+#include "../engine/game_engine.h"
+#include "../input/controller.h"
 #include "../model/piece.h"
 #include "../model/position.h"
 #include "piece_sprite.h"
@@ -11,12 +15,26 @@
 
 namespace view {
 
-void Renderer::render(const model::Board& board, const std::string& boardImagePath) {
-    cv::Mat canvas = render::loadBoardImage(boardImagePath);
+void Renderer::init(const std::string& boardImagePath) {
+    board_canvas_ = render::loadBoardImage(boardImagePath);
+}
 
-    drawPieces(canvas, board);
+void Renderer::drawFrame(const engine::GameEngine& gameEngine,
+                         const input::Controller& controller) {
+    if (board_canvas_.empty()) {
+        throw std::runtime_error("Renderer not initialized; call init() first.");
+    }
 
-    cv::imshow("Image", canvas);
+    cv::Mat canvas = board_canvas_.clone();
+    drawPieces(canvas, gameEngine.board());
+    drawSelectionOverlay(canvas, controller);
+    cv::imshow(kWindowName, canvas);
+}
+
+void Renderer::render(const engine::GameEngine& gameEngine, const input::Controller& controller,
+                      const std::string& boardImagePath) {
+    init(boardImagePath);
+    drawFrame(gameEngine, controller);
     cv::waitKey(0);
     cv::destroyAllWindows();
 }
@@ -46,6 +64,25 @@ void Renderer::drawPieces(cv::Mat& canvas, const model::Board& board) {
             render::blitSpriteWithAlpha(canvas, sprite, x, y);
         }
     }
+}
+
+void Renderer::drawSelectionOverlay(cv::Mat& canvas, const input::Controller& controller) {
+    if (!controller.hasSelection()) {
+        return;
+    }
+
+    const model::Position& selected = controller.selectedSquare();
+    const int cellSize = GameConfig::kClickCellSize;
+    const int originX = GameConfig::kBoardOriginX;
+    const int originY = GameConfig::kBoardOriginY;
+
+    const int cellLeft = originX + selected.col * cellSize;
+    const int cellTop = originY + selected.row * cellSize;
+    const cv::Rect cellRect(cellLeft, cellTop, cellSize, cellSize);
+
+    constexpr int kBorderThickness = 3;
+    const cv::Scalar highlightColor(0, 220, 255);  // BGR: amber/yellow
+    cv::rectangle(canvas, cellRect, highlightColor, kBorderThickness);
 }
 
 }  // namespace view
