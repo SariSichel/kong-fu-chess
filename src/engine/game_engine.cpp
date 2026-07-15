@@ -15,6 +15,14 @@ void GameEngine::reset() {
     is_game_over_ = false;
 }
 
+int GameEngine::elapsedMs() const {
+    return arbiter_.elapsedMs();
+}
+
+const std::vector<realtime::Motion>& GameEngine::activeMotions() const {
+    return arbiter_.getActiveMotions();
+}
+
 namespace {
 
 bool isJumpActiveAt(const realtime::RealTimeArbiter& arbiter, const model::Position& pos) {

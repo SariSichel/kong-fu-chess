@@ -32,6 +32,9 @@ public:
     model::Board& board() { return board_; }
     const model::Board& board() const { return board_; }
 
+    int elapsedMs() const;
+    const std::vector<realtime::Motion>& activeMotions() const;
+
 private:
     struct Premove {
         model::Position from;

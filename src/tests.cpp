@@ -47,6 +47,14 @@ std::string runInput(const std::string& input) {
     return out.str();
 }
 
+int cellTopLeftX(int col) {
+    return GameConfig::kBoardOriginX + col * GameConfig::kClickCellSize;
+}
+
+int cellTopLeftY(int row) {
+    return GameConfig::kBoardOriginY + row * GameConfig::kClickCellSize;
+}
+
 int cellCenterX(int col) {
     return GameConfig::kBoardOriginX + col * GameConfig::kClickCellSize +
            GameConfig::kClickCellSize / 2;
@@ -216,9 +224,17 @@ TEST_CASE("board_mapper: maps window pixels to grid positions using board origin
     CHECK(input::BoardMapper::toPosition(cellCenterX(0), cellCenterY(1)) == pos(1, 0));
     CHECK(input::BoardMapper::toPosition(cellCenterX(2), cellCenterY(3)) == pos(3, 2));
 
+    CHECK(input::BoardMapper::toPosition(cellTopLeftX(0), cellTopLeftY(0)) == pos(0, 0));
+    CHECK(input::BoardMapper::toPosition(cellTopLeftX(0) + GameConfig::kClickCellSize - 1,
+                                         cellTopLeftY(0) + GameConfig::kClickCellSize - 1) ==
+          pos(0, 0));
+    CHECK(input::BoardMapper::toPosition(cellTopLeftX(1), cellTopLeftY(0)) == pos(0, 1));
+    CHECK(input::BoardMapper::toPosition(cellTopLeftX(0), cellTopLeftY(1)) == pos(1, 0));
+
     CHECK(input::BoardMapper::toPosition(-1, cellCenterY(0)) == pos(-1, -1));
     CHECK(input::BoardMapper::toPosition(cellCenterX(0), -1) == pos(-1, -1));
     CHECK(input::BoardMapper::toPosition(5, 5) == pos(-1, -1));
+    CHECK(input::BoardMapper::toPosition(cellTopLeftX(0) - 1, cellTopLeftY(0)) == pos(-1, -1));
 }
 
 TEST_CASE("board parsing and printing") {

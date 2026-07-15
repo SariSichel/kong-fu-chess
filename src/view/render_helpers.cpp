@@ -6,10 +6,28 @@
 #include <stdexcept>
 #include <vector>
 
+#include "../constants.h"
+
 namespace view::render {
 
 int centeredDrawCoord(int cellStart, int cellSize, int spriteSize) {
     return cellStart + (cellSize - spriteSize) / 2;
+}
+
+float motionProgress(int startedAtMs, int durationMs, int elapsedMs) {
+    if (durationMs <= 0) {
+        return 1.0f;
+    }
+
+    const float elapsed = static_cast<float>(elapsedMs - startedAtMs);
+    const float duration = static_cast<float>(durationMs);
+    return std::clamp(elapsed / duration, 0.0f, 1.0f);
+}
+
+void cellCenterPx(int row, int col, float& centerX, float& centerY) {
+    const int cellSize = GameConfig::kClickCellSize;
+    centerX = static_cast<float>(GameConfig::kBoardOriginX + col * cellSize) + cellSize / 2.0f;
+    centerY = static_cast<float>(GameConfig::kBoardOriginY + row * cellSize) + cellSize / 2.0f;
 }
 
 cv::Mat loadBoardImage(const std::string& boardImagePath) {
@@ -101,6 +119,12 @@ void blitSpriteWithAlpha(cv::Mat& canvas, const cv::Mat& sprite, int x, int y) {
     }
 
     throw std::runtime_error("Unsupported sprite channel count.");
+}
+
+void blitSpriteCentered(cv::Mat& canvas, const cv::Mat& sprite, float centerX, float centerY) {
+    const int x = static_cast<int>(centerX - sprite.cols / 2.0f);
+    const int y = static_cast<int>(centerY - sprite.rows / 2.0f);
+    blitSpriteWithAlpha(canvas, sprite, x, y);
 }
 
 }  // namespace view::render

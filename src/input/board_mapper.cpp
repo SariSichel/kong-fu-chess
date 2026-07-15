@@ -7,7 +7,7 @@ namespace input {
 namespace {
 
 int cellIndex(int pixel, int origin, int cellSize) {
-    const int adjusted = pixel - origin - cellSize / 2;
+    const int adjusted = pixel - origin;
     if (adjusted < 0) {
         return -1;
     }

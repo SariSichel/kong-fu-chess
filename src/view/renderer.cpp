@@ -1,5 +1,6 @@
 #include "renderer.h"
 
+#include <algorithm>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
@@ -10,10 +11,28 @@
 #include "../input/controller.h"
 #include "../model/piece.h"
 #include "../model/position.h"
+#include "../realtime/motion.h"
 #include "piece_sprite.h"
 #include "render_helpers.h"
 
 namespace view {
+
+namespace {
+
+constexpr int kJumpLiftPx = 28;
+
+bool isActiveMotionSource(const std::vector<realtime::Motion>& motions,
+                          const model::Position& pos) {
+    return std::any_of(motions.begin(), motions.end(), [&](const realtime::Motion& motion) {
+        return motion.source == pos;
+    });
+}
+
+model::Piece motionPiece(const realtime::Motion& motion) {
+    return model::Piece(motion.piece_type, motion.piece_color);
+}
+
+}  // namespace
 
 void Renderer::init(const std::string& boardImagePath) {
     board_canvas_ = render::loadBoardImage(boardImagePath);
@@ -26,7 +45,7 @@ void Renderer::drawFrame(const engine::GameEngine& gameEngine,
     }
 
     cv::Mat canvas = board_canvas_.clone();
-    drawPieces(canvas, gameEngine.board());
+    drawScene(canvas, gameEngine);
     drawSelectionOverlay(canvas, controller);
     cv::imshow(kWindowName, canvas);
 }
@@ -39,31 +58,67 @@ void Renderer::render(const engine::GameEngine& gameEngine, const input::Control
     cv::destroyAllWindows();
 }
 
-void Renderer::drawPieces(cv::Mat& canvas, const model::Board& board) {
-    const int cellSize = GameConfig::kClickCellSize;
-    const int originX = GameConfig::kBoardOriginX;
-    const int originY = GameConfig::kBoardOriginY;
+void Renderer::drawScene(cv::Mat& canvas, const engine::GameEngine& gameEngine) {
+    const model::Board& board = gameEngine.board();
+    const std::vector<realtime::Motion>& motions = gameEngine.activeMotions();
+    const int elapsedMs = gameEngine.elapsedMs();
 
     for (size_t row = 0; row < board.rows(); ++row) {
         for (size_t col = 0; col < board.cols(); ++col) {
-            const model::Piece& piece = board.cell(model::Position{static_cast<int>(row),
-                                                                   static_cast<int>(col)});
-            if (piece.isEmpty()) {
+            const model::Position square{static_cast<int>(row), static_cast<int>(col)};
+            const model::Piece& piece = board.cell(square);
+            if (piece.isEmpty() || isActiveMotionSource(motions, square)) {
                 continue;
             }
 
-            const cv::Mat sprite =
-                render::loadSpriteResized(idleSpritePath(pieceToSpriteCode(piece)), cellSize,
-                                          cellSize);
-
-            const int cellLeft = originX + static_cast<int>(col) * cellSize;
-            const int cellTop = originY + static_cast<int>(row) * cellSize;
-            const int x = render::centeredDrawCoord(cellLeft, cellSize, sprite.cols);
-            const int y = render::centeredDrawCoord(cellTop, cellSize, sprite.rows);
-
-            render::blitSpriteWithAlpha(canvas, sprite, x, y);
+            drawPieceAtCell(canvas, piece, static_cast<int>(row), static_cast<int>(col));
         }
     }
+
+    for (const realtime::Motion& motion : motions) {
+        drawMotion(canvas, motion, elapsedMs);
+    }
+}
+
+void Renderer::drawPieceAtCell(cv::Mat& canvas, const model::Piece& piece, int row, int col) {
+    const int cellSize = GameConfig::kClickCellSize;
+    const cv::Mat sprite =
+        render::loadSpriteResized(idleSpritePath(pieceToSpriteCode(piece)), cellSize, cellSize);
+
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+    render::cellCenterPx(row, col, centerX, centerY);
+    render::blitSpriteCentered(canvas, sprite, centerX, centerY);
+}
+
+void Renderer::drawMotion(cv::Mat& canvas, const realtime::Motion& motion, int elapsedMs) {
+    const int cellSize = GameConfig::kClickCellSize;
+    const model::Piece piece = motionPiece(motion);
+    const cv::Mat sprite =
+        render::loadSpriteResized(idleSpritePath(pieceToSpriteCode(piece)), cellSize, cellSize);
+
+    const float progress =
+        render::motionProgress(motion.started_at_ms, motion.duration_ms, elapsedMs);
+
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+
+    if (motion.type == realtime::MotionType::Move) {
+        float sourceX = 0.0f;
+        float sourceY = 0.0f;
+        float destX = 0.0f;
+        float destY = 0.0f;
+        render::cellCenterPx(motion.source.row, motion.source.col, sourceX, sourceY);
+        render::cellCenterPx(motion.destination.row, motion.destination.col, destX, destY);
+        centerX = sourceX + (destX - sourceX) * progress;
+        centerY = sourceY + (destY - sourceY) * progress;
+    } else {
+        render::cellCenterPx(motion.source.row, motion.source.col, centerX, centerY);
+        const float lift = 4.0f * progress * (1.0f - progress) * static_cast<float>(kJumpLiftPx);
+        centerY -= lift;
+    }
+
+    render::blitSpriteCentered(canvas, sprite, centerX, centerY);
 }
 
 void Renderer::drawSelectionOverlay(cv::Mat& canvas, const input::Controller& controller) {
@@ -81,7 +136,7 @@ void Renderer::drawSelectionOverlay(cv::Mat& canvas, const input::Controller& co
     const cv::Rect cellRect(cellLeft, cellTop, cellSize, cellSize);
 
     constexpr int kBorderThickness = 3;
-    const cv::Scalar highlightColor(0, 220, 255);  // BGR: amber/yellow
+    const cv::Scalar highlightColor(0, 220, 255);
     cv::rectangle(canvas, cellRect, highlightColor, kBorderThickness);
 }
 

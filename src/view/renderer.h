@@ -13,7 +13,12 @@ class Controller;
 
 namespace model {
 class Board;
+class Piece;
 }  // namespace model
+
+namespace realtime {
+struct Motion;
+}  // namespace realtime
 
 namespace view {
 
@@ -28,7 +33,9 @@ public:
                 const std::string& boardImagePath);
 
 private:
-    void drawPieces(cv::Mat& canvas, const model::Board& board);
+    void drawScene(cv::Mat& canvas, const engine::GameEngine& gameEngine);
+    void drawPieceAtCell(cv::Mat& canvas, const model::Piece& piece, int row, int col);
+    void drawMotion(cv::Mat& canvas, const realtime::Motion& motion, int elapsedMs);
     void drawSelectionOverlay(cv::Mat& canvas, const input::Controller& controller);
 
     cv::Mat board_canvas_;
