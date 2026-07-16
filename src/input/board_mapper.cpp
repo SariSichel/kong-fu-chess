@@ -31,4 +31,10 @@ model::Position BoardMapper::toPosition(int x, int y) {
     return model::Position(row, col);
 }
 
+void BoardMapper::toPixelCenter(int row, int col, float& centerX, float& centerY) {
+    const int cellSize = GameConfig::kClickCellSize;
+    centerX = static_cast<float>(GameConfig::kBoardOriginX + col * cellSize) + cellSize / 2.0f;
+    centerY = static_cast<float>(GameConfig::kBoardOriginY + row * cellSize) + cellSize / 2.0f;
+}
+
 }  // namespace input

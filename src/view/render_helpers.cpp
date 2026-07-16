@@ -6,8 +6,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include "../constants.h"
-
 namespace view::render {
 
 int centeredDrawCoord(int cellStart, int cellSize, int spriteSize) {
@@ -22,12 +20,6 @@ float motionProgress(int startedAtMs, int durationMs, int elapsedMs) {
     const float elapsed = static_cast<float>(elapsedMs - startedAtMs);
     const float duration = static_cast<float>(durationMs);
     return std::clamp(elapsed / duration, 0.0f, 1.0f);
-}
-
-void cellCenterPx(int row, int col, float& centerX, float& centerY) {
-    const int cellSize = GameConfig::kClickCellSize;
-    centerX = static_cast<float>(GameConfig::kBoardOriginX + col * cellSize) + cellSize / 2.0f;
-    centerY = static_cast<float>(GameConfig::kBoardOriginY + row * cellSize) + cellSize / 2.0f;
 }
 
 cv::Mat loadBoardImage(const std::string& boardImagePath) {

@@ -8,6 +8,7 @@
 
 #include "../constants.h"
 #include "../engine/game_engine.h"
+#include "../input/board_mapper.h"
 #include "../input/controller.h"
 #include "../model/piece.h"
 #include "../model/position.h"
@@ -87,7 +88,7 @@ void Renderer::drawPieceAtCell(cv::Mat& canvas, const model::Piece& piece, int r
 
     float centerX = 0.0f;
     float centerY = 0.0f;
-    render::cellCenterPx(row, col, centerX, centerY);
+    input::BoardMapper::toPixelCenter(row, col, centerX, centerY);
     render::blitSpriteCentered(canvas, sprite, centerX, centerY);
 }
 
@@ -108,12 +109,13 @@ void Renderer::drawMotion(cv::Mat& canvas, const realtime::Motion& motion, int e
         float sourceY = 0.0f;
         float destX = 0.0f;
         float destY = 0.0f;
-        render::cellCenterPx(motion.source.row, motion.source.col, sourceX, sourceY);
-        render::cellCenterPx(motion.destination.row, motion.destination.col, destX, destY);
+        input::BoardMapper::toPixelCenter(motion.source.row, motion.source.col, sourceX, sourceY);
+        input::BoardMapper::toPixelCenter(motion.destination.row, motion.destination.col, destX,
+                                          destY);
         centerX = sourceX + (destX - sourceX) * progress;
         centerY = sourceY + (destY - sourceY) * progress;
     } else {
-        render::cellCenterPx(motion.source.row, motion.source.col, centerX, centerY);
+        input::BoardMapper::toPixelCenter(motion.source.row, motion.source.col, centerX, centerY);
         const float lift = 4.0f * progress * (1.0f - progress) * static_cast<float>(kJumpLiftPx);
         centerY -= lift;
     }

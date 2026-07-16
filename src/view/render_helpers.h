@@ -11,8 +11,6 @@ int centeredDrawCoord(int cellStart, int cellSize, int spriteSize);
 
 float motionProgress(int startedAtMs, int durationMs, int elapsedMs);
 
-void cellCenterPx(int row, int col, float& centerX, float& centerY);
-
 cv::Mat loadBoardImage(const std::string& boardImagePath);
 
 cv::Mat loadSpriteResized(const std::string& path, int targetW, int targetH);

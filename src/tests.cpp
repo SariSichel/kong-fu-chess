@@ -55,22 +55,18 @@ int cellTopLeftY(int row) {
     return GameConfig::kBoardOriginY + row * GameConfig::kClickCellSize;
 }
 
-int cellCenterX(int col) {
-    return GameConfig::kBoardOriginX + col * GameConfig::kClickCellSize +
-           GameConfig::kClickCellSize / 2;
-}
-
-int cellCenterY(int row) {
-    return GameConfig::kBoardOriginY + row * GameConfig::kClickCellSize +
-           GameConfig::kClickCellSize / 2;
-}
-
 void clickSquare(engine::GameEngine& engine, input::Controller& controller, int row, int col) {
-    controller.handleClick(engine, cellCenterX(col), cellCenterY(row));
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+    input::BoardMapper::toPixelCenter(row, col, centerX, centerY);
+    controller.handleClick(engine, static_cast<int>(centerX), static_cast<int>(centerY));
 }
 
 void jumpSquare(engine::GameEngine& engine, input::Controller& controller, int row, int col) {
-    controller.handleJump(engine, cellCenterX(col), cellCenterY(row));
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+    input::BoardMapper::toPixelCenter(row, col, centerX, centerY);
+    controller.handleJump(engine, static_cast<int>(centerX), static_cast<int>(centerY));
 }
 
 void copyBoardIntoEngine(engine::GameEngine& engine, const Board& source) {
@@ -219,10 +215,21 @@ constexpr std::int64_t kMoveBToCDurationMs = 1 * GameConfig::kMoveDurationMs;
 }  // namespace
 
 TEST_CASE("board_mapper: maps window pixels to grid positions using board origin") {
-    CHECK(input::BoardMapper::toPosition(cellCenterX(0), cellCenterY(0)) == pos(0, 0));
-    CHECK(input::BoardMapper::toPosition(cellCenterX(1), cellCenterY(0)) == pos(0, 1));
-    CHECK(input::BoardMapper::toPosition(cellCenterX(0), cellCenterY(1)) == pos(1, 0));
-    CHECK(input::BoardMapper::toPosition(cellCenterX(2), cellCenterY(3)) == pos(3, 2));
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+
+    input::BoardMapper::toPixelCenter(0, 0, centerX, centerY);
+    CHECK(input::BoardMapper::toPosition(static_cast<int>(centerX), static_cast<int>(centerY)) ==
+          pos(0, 0));
+    input::BoardMapper::toPixelCenter(0, 1, centerX, centerY);
+    CHECK(input::BoardMapper::toPosition(static_cast<int>(centerX), static_cast<int>(centerY)) ==
+          pos(0, 1));
+    input::BoardMapper::toPixelCenter(1, 0, centerX, centerY);
+    CHECK(input::BoardMapper::toPosition(static_cast<int>(centerX), static_cast<int>(centerY)) ==
+          pos(1, 0));
+    input::BoardMapper::toPixelCenter(3, 2, centerX, centerY);
+    CHECK(input::BoardMapper::toPosition(static_cast<int>(centerX), static_cast<int>(centerY)) ==
+          pos(3, 2));
 
     CHECK(input::BoardMapper::toPosition(cellTopLeftX(0), cellTopLeftY(0)) == pos(0, 0));
     CHECK(input::BoardMapper::toPosition(cellTopLeftX(0) + GameConfig::kClickCellSize - 1,
@@ -231,8 +238,9 @@ TEST_CASE("board_mapper: maps window pixels to grid positions using board origin
     CHECK(input::BoardMapper::toPosition(cellTopLeftX(1), cellTopLeftY(0)) == pos(0, 1));
     CHECK(input::BoardMapper::toPosition(cellTopLeftX(0), cellTopLeftY(1)) == pos(1, 0));
 
-    CHECK(input::BoardMapper::toPosition(-1, cellCenterY(0)) == pos(-1, -1));
-    CHECK(input::BoardMapper::toPosition(cellCenterX(0), -1) == pos(-1, -1));
+    input::BoardMapper::toPixelCenter(0, 0, centerX, centerY);
+    CHECK(input::BoardMapper::toPosition(-1, static_cast<int>(centerY)) == pos(-1, -1));
+    CHECK(input::BoardMapper::toPosition(static_cast<int>(centerX), -1) == pos(-1, -1));
     CHECK(input::BoardMapper::toPosition(5, 5) == pos(-1, -1));
     CHECK(input::BoardMapper::toPosition(cellTopLeftX(0) - 1, cellTopLeftY(0)) == pos(-1, -1));
 }
