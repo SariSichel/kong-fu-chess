@@ -13,6 +13,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 set(KONG_FU_CHESS_SOURCES
     src/model/board.cpp
+    src/rules/movement/movement_helpers.cpp
+    src/rules/movement/piece_movements.cpp
     src/rules/piece_rules.cpp
     src/rules/rule_engine.cpp
     src/realtime/real_time_arbiter.cpp
