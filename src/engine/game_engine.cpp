@@ -48,6 +48,7 @@ void GameEngine::advanceTime(int ms) {
     checkGameOverFromCompletingMoves(completingMoves);
     arbiter_.advanceTime(ms, board_);
     processPremovesAfterAdvance(completingMoves);
+    applyCooldownAfterArrivals(completingMoves);
 }
 
 bool GameEngine::requestMove(const model::Position& from, const model::Position& to) {
@@ -85,7 +86,7 @@ bool GameEngine::requestJump(const model::Position& pos) {
     }
 
     const model::Piece& piece = board_.cell(pos);
-    if (piece.isEmpty() || piece.cooldownRemainingMs() > 0 || isBusyAt(pos)) {
+    if (piece.isEmpty() || piece.jumpCooldownRemainingMs() > 0 || isBusyAt(pos)) {
         return false;
     }
 
@@ -211,6 +212,31 @@ void GameEngine::processPremovesAfterAdvance(
         }
 
         tryExecutePremove(motion.source, motion.destination);
+    }
+}
+
+void GameEngine::applyCooldownAfterArrivals(
+    const std::vector<realtime::Motion>& completingMoves) {
+    for (const realtime::Motion& motion : completingMoves) {
+        if (motion.type != realtime::MotionType::Move) {
+            continue;
+        }
+
+        if (!board_.inBounds(motion.destination)) {
+            continue;
+        }
+
+        const model::Piece& piece = board_.cell(motion.destination);
+        if (piece.isEmpty()) {
+            continue;
+        }
+
+        if (isBusyAt(motion.destination)) {
+            continue;
+        }
+
+        board_.cell(motion.destination)
+            .setMoveCooldown(static_cast<int>(GameConfig::kMoveCooldownMs));
     }
 }
 

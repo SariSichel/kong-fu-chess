@@ -19,4 +19,14 @@ void blitSpriteWithAlpha(cv::Mat& canvas, const cv::Mat& sprite, int x, int y);
 
 void blitSpriteCentered(cv::Mat& canvas, const cv::Mat& sprite, float centerX, float centerY);
 
+float cooldownProgress(int remainingMs, int totalMs);
+
+void drawCooldownOverlay(cv::Mat& canvas,
+                         float centerX,
+                         float centerY,
+                         int cellSize,
+                         float progress,
+                         int remainingMs,
+                         const cv::Scalar& ringColor);
+
 }  // namespace view::render

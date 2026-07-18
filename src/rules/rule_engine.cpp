@@ -12,7 +12,7 @@ bool RuleEngine::validateMove(const model::Board& board, const model::Position& 
         return false;
     }
 
-    if (piece.cooldownRemainingMs() > 0) {
+    if (piece.moveCooldownRemainingMs() > 0) {
         return false;
     }
 

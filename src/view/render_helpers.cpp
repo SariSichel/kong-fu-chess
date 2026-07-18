@@ -4,6 +4,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace view::render {
@@ -117,6 +118,69 @@ void blitSpriteCentered(cv::Mat& canvas, const cv::Mat& sprite, float centerX, f
     const int x = static_cast<int>(centerX - sprite.cols / 2.0f);
     const int y = static_cast<int>(centerY - sprite.rows / 2.0f);
     blitSpriteWithAlpha(canvas, sprite, x, y);
+}
+
+float cooldownProgress(int remainingMs, int totalMs) {
+    if (totalMs <= 0) {
+        return 1.0f;
+    }
+
+    const float remaining = static_cast<float>(remainingMs);
+    const float total = static_cast<float>(totalMs);
+    return 1.0f - std::clamp(remaining / total, 0.0f, 1.0f);
+}
+
+void drawCooldownOverlay(cv::Mat& canvas,
+                         float centerX,
+                         float centerY,
+                         int cellSize,
+                         float progress,
+                         int remainingMs,
+                         const cv::Scalar& ringColor) {
+    if (progress >= 1.0f || remainingMs <= 0) {
+        return;
+    }
+
+    const int radius = std::max(8, cellSize * 42 / 100);
+    const cv::Point center(static_cast<int>(centerX), static_cast<int>(centerY));
+
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            if (dx * dx + dy * dy > radius * radius) {
+                continue;
+            }
+
+            const int x = center.x + dx;
+            const int y = center.y + dy;
+            if (x < 0 || y < 0 || x >= canvas.cols || y >= canvas.rows) {
+                continue;
+            }
+
+            cv::Vec3b& pixel = canvas.at<cv::Vec3b>(y, x);
+            pixel[0] = cv::saturate_cast<uchar>(pixel[0] * 0.55f + 20.0f * 0.45f);
+            pixel[1] = cv::saturate_cast<uchar>(pixel[1] * 0.55f + 20.0f * 0.45f);
+            pixel[2] = cv::saturate_cast<uchar>(pixel[2] * 0.55f + 30.0f * 0.45f);
+        }
+    }
+
+    const double startAngle = -90.0;
+    const double endAngle = startAngle + 360.0 * static_cast<double>(progress);
+    cv::ellipse(canvas, center, cv::Size(radius, radius), 0.0, startAngle, endAngle, ringColor, 3,
+                cv::LINE_AA);
+
+    const int seconds = (remainingMs + 999) / 1000;
+    if (seconds > 0) {
+        const std::string label = std::to_string(seconds);
+        const double fontScale = 0.45;
+        const int thickness = 1;
+        int baseline = 0;
+        const cv::Size textSize =
+            cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, fontScale, thickness, &baseline);
+        const cv::Point textOrigin(center.x - textSize.width / 2,
+                                   center.y + textSize.height / 2);
+        cv::putText(canvas, label, textOrigin, cv::FONT_HERSHEY_SIMPLEX, fontScale,
+                    cv::Scalar(255, 255, 255), thickness, cv::LINE_AA);
+    }
 }
 
 }  // namespace view::render

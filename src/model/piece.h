@@ -32,11 +32,30 @@ public:
 
     void promote(PieceType newType) { type_ = newType; }
 
-    void setCooldown(int ms) { cooldown_remaining_ms_ = ms; }
-    void decreaseCooldown(int ms) {
-        cooldown_remaining_ms_ = (cooldown_remaining_ms_ > ms) ? (cooldown_remaining_ms_ - ms) : 0;
+    void setMoveCooldown(int ms) {
+        move_cooldown_remaining_ms_ = ms;
+        move_cooldown_total_ms_ = ms;
     }
-    int cooldownRemainingMs() const { return cooldown_remaining_ms_; }
+    void setJumpCooldown(int ms) {
+        jump_cooldown_remaining_ms_ = ms;
+        jump_cooldown_total_ms_ = ms;
+    }
+    void decreaseCooldown(int ms) {
+        if (move_cooldown_remaining_ms_ > ms) {
+            move_cooldown_remaining_ms_ -= ms;
+        } else {
+            move_cooldown_remaining_ms_ = 0;
+        }
+        if (jump_cooldown_remaining_ms_ > ms) {
+            jump_cooldown_remaining_ms_ -= ms;
+        } else {
+            jump_cooldown_remaining_ms_ = 0;
+        }
+    }
+    int moveCooldownRemainingMs() const { return move_cooldown_remaining_ms_; }
+    int jumpCooldownRemainingMs() const { return jump_cooldown_remaining_ms_; }
+    int moveCooldownTotalMs() const { return move_cooldown_total_ms_; }
+    int jumpCooldownTotalMs() const { return jump_cooldown_total_ms_; }
 
     bool hasMoved() const { return has_moved_; }
     void markMoved() { has_moved_ = true; }
@@ -44,7 +63,10 @@ public:
 private:
     PieceType type_ = PieceType::Empty;
     Color color_ = Color::White;
-    int cooldown_remaining_ms_ = 0;
+    int move_cooldown_remaining_ms_ = 0;
+    int move_cooldown_total_ms_ = 0;
+    int jump_cooldown_remaining_ms_ = 0;
+    int jump_cooldown_total_ms_ = 0;
     bool has_moved_ = false;
 };
 

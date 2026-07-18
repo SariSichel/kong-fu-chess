@@ -51,6 +51,7 @@ private:
     void tryExecutePremove(const model::Position& moveSource, const model::Position& arrival);
     void checkGameOverFromCompletingMoves(const std::vector<realtime::Motion>& completingMoves);
     void processPremovesAfterAdvance(const std::vector<realtime::Motion>& completingMoves);
+    void applyCooldownAfterArrivals(const std::vector<realtime::Motion>& completingMoves);
 
     model::Board board_;
     realtime::RealTimeArbiter arbiter_;

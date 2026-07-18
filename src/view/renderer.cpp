@@ -33,6 +33,28 @@ model::Piece motionPiece(const realtime::Motion& motion) {
     return model::Piece(motion.piece_type, motion.piece_color);
 }
 
+void drawPieceCooldownOverlay(cv::Mat& canvas,
+                              const model::Piece& piece,
+                              float centerX,
+                              float centerY) {
+    const int cellSize = GameConfig::kClickCellSize;
+
+    if (piece.moveCooldownRemainingMs() > 0) {
+        const float progress = render::cooldownProgress(piece.moveCooldownRemainingMs(),
+                                                        piece.moveCooldownTotalMs());
+        render::drawCooldownOverlay(canvas, centerX, centerY, cellSize, progress,
+                                    piece.moveCooldownRemainingMs(), cv::Scalar(0, 180, 255));
+        return;
+    }
+
+    if (piece.jumpCooldownRemainingMs() > 0) {
+        const float progress = render::cooldownProgress(piece.jumpCooldownRemainingMs(),
+                                                        piece.jumpCooldownTotalMs());
+        render::drawCooldownOverlay(canvas, centerX, centerY, cellSize, progress,
+                                    piece.jumpCooldownRemainingMs(), cv::Scalar(255, 140, 0));
+    }
+}
+
 }  // namespace
 
 void Renderer::init(const std::string& boardImagePath) {
@@ -90,6 +112,7 @@ void Renderer::drawPieceAtCell(cv::Mat& canvas, const model::Piece& piece, int r
     float centerY = 0.0f;
     input::BoardMapper::toPixelCenter(row, col, centerX, centerY);
     render::blitSpriteCentered(canvas, sprite, centerX, centerY);
+    drawPieceCooldownOverlay(canvas, piece, centerX, centerY);
 }
 
 void Renderer::drawMotion(cv::Mat& canvas, const realtime::Motion& motion, int elapsedMs) {

@@ -1,5 +1,7 @@
 #include "real_time_arbiter.h"
 
+#include "../constants.h"
+
 #include <algorithm>
 #include <vector>
 
@@ -124,6 +126,21 @@ void RealTimeArbiter::advanceTime(int ms, model::Board& board) {
         }
 
         removeExpiredMotions(active_motions_, MotionType::Move, elapsed_ms_);
+    }
+
+    for (const Motion& motion : active_motions_) {
+        if (motion.type != MotionType::Jump || !motion.isExpired(elapsed_ms_)) {
+            continue;
+        }
+
+        if (!board.inBounds(motion.source)) {
+            continue;
+        }
+
+        model::Piece& piece = board.cell(motion.source);
+        if (!piece.isEmpty()) {
+            piece.setJumpCooldown(static_cast<int>(GameConfig::kJumpCooldownMs));
+        }
     }
 
     removeExpiredMotions(active_motions_, MotionType::Jump, elapsed_ms_);

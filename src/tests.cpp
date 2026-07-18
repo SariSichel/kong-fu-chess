@@ -558,7 +558,7 @@ TEST_CASE("test_cannot_send_duplicate_command_while_moving") {
     CHECK_FALSE(hasRookAt(engine.board(), kSquareA_R, kSquareA_C));
 }
 
-TEST_CASE("test_can_move_immediately_upon_arrival_no_cooldown") {
+TEST_CASE("test_move_blocked_during_cooldown") {
     Board board = makeCommonRouteBoard();
     engine::GameEngine engine;
     input::Controller controller;
@@ -570,6 +570,30 @@ TEST_CASE("test_can_move_immediately_upon_arrival_no_cooldown") {
 
     CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
     CHECK(movementStateAt(engine, kSquareB_R, kSquareB_C) == TestMovementState::Idle);
+    CHECK(engine.board().cell(pos(kSquareB_R, kSquareB_C)).moveCooldownRemainingMs() > 0);
+
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareC_R, kSquareC_C);
+
+    CHECK_FALSE(isPieceMovingAt(engine, kSquareB_R, kSquareB_C));
+    CHECK(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+}
+
+TEST_CASE("test_move_allowed_after_cooldown_expires") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs));
+
+    CHECK(engine.board().cell(pos(kSquareB_R, kSquareB_C)).moveCooldownRemainingMs() > 0);
+
+    engine.advanceTime(static_cast<int>(GameConfig::kMoveCooldownMs));
+
+    CHECK(engine.board().cell(pos(kSquareB_R, kSquareB_C)).moveCooldownRemainingMs() == 0);
 
     clickSquare(engine, controller, kSquareB_R, kSquareB_C);
     clickSquare(engine, controller, kSquareC_R, kSquareC_C);
@@ -582,6 +606,23 @@ TEST_CASE("test_can_move_immediately_upon_arrival_no_cooldown") {
 
     CHECK(hasRookAt(engine.board(), kSquareC_R, kSquareC_C));
     CHECK_FALSE(hasRookAt(engine.board(), kSquareB_R, kSquareB_C));
+}
+
+TEST_CASE("test_premove_executes_before_arrival_cooldown_applies") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareB_R, kSquareB_C);
+    clickSquare(engine, controller, kSquareA_R, kSquareA_C);
+    clickSquare(engine, controller, kSquareC_R, kSquareC_C);
+
+    engine.advanceTime(static_cast<int>(kMoveAToBDurationMs));
+
+    CHECK(isPieceMovingAt(engine, kSquareB_R, kSquareB_C));
+    CHECK(engine.board().cell(pos(kSquareB_R, kSquareB_C)).moveCooldownRemainingMs() == 0);
 }
 
 TEST_CASE("test_piece_state_transitions_correctly") {
@@ -1046,6 +1087,26 @@ TEST_CASE("jump: normal landing returns to idle on the same cell") {
     engine.advanceTime(static_cast<int>(1));
     CHECK(hasRookAt(engine.board(), 0, 0));
     CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
+    CHECK(engine.board().cell(pos(0, 0)).jumpCooldownRemainingMs() > 0);
+}
+
+TEST_CASE("jump: move cooldown does not block an immediate jump after landing") {
+    Board board;
+    board.addRow({Piece(PieceType::King, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 1);
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 1)));
+
+    CHECK(hasPieceAt(engine.board(), 0, 1, PieceType::King, Color::White));
+    CHECK(engine.board().cell(pos(0, 1)).moveCooldownRemainingMs() > 0);
+
+    jumpSquare(engine, controller, 0, 1);
+    CHECK(movementStateAt(engine, 0, 1) == TestMovementState::Airborne);
 }
 
 TEST_CASE("jump: airborne piece captures an arriving enemy and stays put") {
