@@ -57,6 +57,21 @@ void drawPieceCooldownOverlay(cv::Mat& canvas,
 
 }  // namespace
 
+Renderer::SpriteCache::SpriteCache(int cellSize) : cell_size_(cellSize) {}
+
+const cv::Mat& Renderer::SpriteCache::idleSpriteFor(const model::Piece& piece) {
+    const std::string code = pieceToSpriteCode(piece);
+    const auto it = sprites_.find(code);
+    if (it != sprites_.end()) {
+        return it->second;
+    }
+
+    const cv::Mat loaded =
+        render::loadSpriteResized(idleSpritePath(code), cell_size_, cell_size_);
+    const auto inserted = sprites_.emplace(code, std::move(loaded));
+    return inserted.first->second;
+}
+
 void Renderer::init(const std::string& boardImagePath) {
     board_canvas_ = render::loadBoardImage(boardImagePath);
 }
@@ -104,9 +119,7 @@ void Renderer::drawScene(cv::Mat& canvas, const engine::GameEngine& gameEngine) 
 }
 
 void Renderer::drawPieceAtCell(cv::Mat& canvas, const model::Piece& piece, int row, int col) {
-    const int cellSize = GameConfig::kClickCellSize;
-    const cv::Mat sprite =
-        render::loadSpriteResized(idleSpritePath(pieceToSpriteCode(piece)), cellSize, cellSize);
+    const cv::Mat& sprite = sprite_cache_.idleSpriteFor(piece);
 
     float centerX = 0.0f;
     float centerY = 0.0f;
@@ -116,10 +129,8 @@ void Renderer::drawPieceAtCell(cv::Mat& canvas, const model::Piece& piece, int r
 }
 
 void Renderer::drawMotion(cv::Mat& canvas, const realtime::Motion& motion, int elapsedMs) {
-    const int cellSize = GameConfig::kClickCellSize;
     const model::Piece piece = motionPiece(motion);
-    const cv::Mat sprite =
-        render::loadSpriteResized(idleSpritePath(pieceToSpriteCode(piece)), cellSize, cellSize);
+    const cv::Mat& sprite = sprite_cache_.idleSpriteFor(piece);
 
     const float progress =
         render::motionProgress(motion.started_at_ms, motion.duration_ms, elapsedMs);

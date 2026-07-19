@@ -8,9 +8,6 @@ namespace view {
 
 namespace {
 
-constexpr const char* kPiecesRoot =
-    R"(C:\Users\saris\OneDrive\Documents\bootcamp\assets\assets\pieces_mine)";
-
 char pieceTypeToChar(model::PieceType type) {
     switch (type) {
         case model::PieceType::King:
@@ -40,7 +37,8 @@ std::string pieceToSpriteCode(const model::Piece& piece) {
 }
 
 std::string idleSpritePath(const std::string& pieceCode) {
-    return std::string(kPiecesRoot) + "/" + pieceCode + "/states/idle/sprites/1.png";
+    return std::string(AssetPaths::kPiecesRoot) + "/" + pieceCode + "/states/" +
+           AssetPaths::kIdleSpriteState + "/sprites/" + AssetPaths::kIdleSpriteFile;
 }
 
 }  // namespace view

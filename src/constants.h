@@ -45,6 +45,17 @@ constexpr std::int64_t kMoveCooldownMs = 1000;
 constexpr std::int64_t kJumpCooldownMs = 2000;
 }  // namespace GameConfig
 
+namespace AssetPaths {
+constexpr const char* kAssetsRoot =
+    R"(C:\Users\saris\OneDrive\Documents\bootcamp\assets\assets)";
+constexpr const char* kPiecesRoot =
+    R"(C:\Users\saris\OneDrive\Documents\bootcamp\assets\assets\pieces_mine)";
+constexpr const char* kBoardImage =
+    R"(C:\Users\saris\OneDrive\Documents\bootcamp\assets\assets\board.png)";
+constexpr const char* kIdleSpriteState = "idle";
+constexpr const char* kIdleSpriteFile = "1.png";
+}  // namespace AssetPaths
+
 namespace Text {
 constexpr const char* kWhitespace = " \t\r\n";
 }  // namespace Text

@@ -6,15 +6,13 @@
 #include "io/board_setup.h"
 #include "view/renderer.h"
 
+#include "constants.h"
 #include <opencv2/highgui.hpp>
 
 // Test-only path — keep for reference, do NOT use in GUI main:
 // #include "texttests/script_runner.h"
 
 namespace {
-
-constexpr const char* kBoardImagePath =
-    R"(C:\Users\saris\OneDrive\Documents\bootcamp\CTD26\board.png)";
 
 constexpr int kFrameMs = 16;
 
@@ -37,7 +35,7 @@ void runGameLoop(engine::GameEngine& gameEngine, input::Controller& controller,
                  view::Renderer& renderer) {
     AppState state{&gameEngine, &controller, true};
 
-    renderer.init(kBoardImagePath);
+    renderer.init(AssetPaths::kBoardImage);
     cv::namedWindow(view::Renderer::kWindowName);
     cv::setMouseCallback(view::Renderer::kWindowName, onMouse, &state);
 
