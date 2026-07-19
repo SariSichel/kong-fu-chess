@@ -82,9 +82,11 @@ void Renderer::drawFrame(const engine::GameEngine& gameEngine,
         throw std::runtime_error("Renderer not initialized; call init() first.");
     }
 
-    cv::Mat canvas = board_canvas_.clone();
+    cv::Mat canvas =
+        render::createExtendedCanvas(board_canvas_, HudConfig::kPanelWidth);
     drawScene(canvas, gameEngine);
     drawSelectionOverlay(canvas, controller);
+    drawHud(canvas, board_canvas_.cols, gameEngine);
     cv::imshow(kWindowName, canvas);
 }
 
@@ -155,6 +157,10 @@ void Renderer::drawMotion(cv::Mat& canvas, const realtime::Motion& motion, int e
     }
 
     render::blitSpriteCentered(canvas, sprite, centerX, centerY);
+}
+
+void Renderer::drawHud(cv::Mat& canvas, int boardWidth, const engine::GameEngine& gameEngine) {
+    render::drawHudPanel(canvas, boardWidth, gameEngine.moveLog());
 }
 
 void Renderer::drawSelectionOverlay(cv::Mat& canvas, const input::Controller& controller) {

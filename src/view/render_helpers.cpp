@@ -1,8 +1,12 @@
 #include "render_helpers.h"
 
+#include "../constants.h"
+#include "../engine/move_log.h"
+
 #include <algorithm>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -180,6 +184,75 @@ void drawCooldownOverlay(cv::Mat& canvas,
                                    center.y + textSize.height / 2);
         cv::putText(canvas, label, textOrigin, cv::FONT_HERSHEY_SIMPLEX, fontScale,
                     cv::Scalar(255, 255, 255), thickness, cv::LINE_AA);
+    }
+}
+
+cv::Mat createExtendedCanvas(const cv::Mat& boardCanvas, int hudPanelWidth) {
+    cv::Mat extended(boardCanvas.rows, boardCanvas.cols + hudPanelWidth, CV_8UC3,
+                     cv::Scalar(28, 28, 32));
+    boardCanvas.copyTo(extended(cv::Rect(0, 0, boardCanvas.cols, boardCanvas.rows)));
+
+    const cv::Rect panelRect(boardCanvas.cols, 0, hudPanelWidth, boardCanvas.rows);
+    cv::Mat panel = extended(panelRect);
+    panel.setTo(cv::Scalar(36, 34, 42));
+
+    return extended;
+}
+
+void drawTextLine(cv::Mat& canvas,
+                  const std::string& text,
+                  int x,
+                  int y,
+                  double fontScale,
+                  const cv::Scalar& color,
+                  int thickness) {
+    cv::putText(canvas, text, cv::Point(x, y), cv::FONT_HERSHEY_SIMPLEX, fontScale, color,
+                thickness, cv::LINE_AA);
+}
+
+void drawHudPanel(cv::Mat& canvas, int boardWidth, const engine::MoveLog& moveLog) {
+    const int panelX = boardWidth + HudConfig::kPadding;
+    int cursorY = HudConfig::kPadding + HudConfig::kLineHeight;
+
+    const double titleScale =
+        static_cast<double>(HudConfig::kTitleFontScaleTimes100) / 100.0;
+    const double scoreScale =
+        static_cast<double>(HudConfig::kScoreFontScaleTimes100) / 100.0;
+    const double bodyScale = static_cast<double>(HudConfig::kBodyFontScaleTimes100) / 100.0;
+
+    drawTextLine(canvas, "Score", panelX, cursorY, titleScale, cv::Scalar(220, 220, 220),
+                 HudConfig::kTextThickness);
+    cursorY += HudConfig::kLineHeight + 4;
+
+    std::ostringstream scoreLine;
+    scoreLine << "White: " << moveLog.whiteScore() << "   Black: " << moveLog.blackScore();
+    drawTextLine(canvas, scoreLine.str(), panelX, cursorY, scoreScale, cv::Scalar(240, 240, 240),
+                 HudConfig::kTextThickness);
+    cursorY += HudConfig::kLineHeight + 12;
+
+    drawTextLine(canvas, "Move Log", panelX, cursorY, titleScale, cv::Scalar(220, 220, 220),
+                 HudConfig::kTextThickness);
+    cursorY += HudConfig::kLineHeight + 6;
+
+    const std::vector<engine::MoveLogEntry>& entries = moveLog.entries();
+    const int startIndex =
+        std::max(0, static_cast<int>(entries.size()) - HudConfig::kMaxMoveLogLines);
+
+    if (startIndex >= static_cast<int>(entries.size())) {
+        drawTextLine(canvas, "(no moves yet)", panelX, cursorY, bodyScale,
+                     cv::Scalar(160, 160, 170), HudConfig::kTextThickness);
+        return;
+    }
+
+    for (int index = startIndex; index < static_cast<int>(entries.size()); ++index) {
+        const std::string& line = entries[static_cast<size_t>(index)].text;
+        drawTextLine(canvas, line, panelX, cursorY, bodyScale, cv::Scalar(210, 210, 220),
+                     HudConfig::kTextThickness);
+        cursorY += HudConfig::kLineHeight;
+
+        if (cursorY + HudConfig::kLineHeight > canvas.rows - HudConfig::kPadding) {
+            break;
+        }
     }
 }
 

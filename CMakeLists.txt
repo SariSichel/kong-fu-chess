@@ -19,6 +19,7 @@ set(KONG_FU_CHESS_SOURCES
     src/rules/rule_engine.cpp
     src/realtime/real_time_arbiter.cpp
     src/engine/game_engine.cpp
+    src/engine/move_log.cpp
     src/input/board_mapper.cpp
     src/input/controller.cpp
     src/io/board_parser.cpp

@@ -2,6 +2,11 @@
 
 #include <opencv2/core.hpp>
 #include <string>
+#include <vector>
+
+namespace engine {
+class MoveLog;
+}  // namespace engine
 
 namespace view::render {
 
@@ -28,5 +33,17 @@ void drawCooldownOverlay(cv::Mat& canvas,
                          float progress,
                          int remainingMs,
                          const cv::Scalar& ringColor);
+
+cv::Mat createExtendedCanvas(const cv::Mat& boardCanvas, int hudPanelWidth);
+
+void drawTextLine(cv::Mat& canvas,
+                  const std::string& text,
+                  int x,
+                  int y,
+                  double fontScale,
+                  const cv::Scalar& color,
+                  int thickness = 1);
+
+void drawHudPanel(cv::Mat& canvas, int boardWidth, const engine::MoveLog& moveLog);
 
 }  // namespace view::render

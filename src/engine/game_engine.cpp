@@ -13,6 +13,7 @@ void GameEngine::reset() {
     next_motion_id_ = 0;
     premoves_.clear();
     is_game_over_ = false;
+    move_log_.clear();
 }
 
 int GameEngine::elapsedMs() const {
@@ -46,9 +47,22 @@ void GameEngine::advanceTime(int ms) {
     }
 
     checkGameOverFromCompletingMoves(completingMoves);
-    arbiter_.advanceTime(ms, board_);
+    const std::vector<realtime::MoveResolution> resolutions =
+        arbiter_.advanceTime(ms, board_);
+    processMoveResolutions(resolutions);
     processPremovesAfterAdvance(completingMoves);
     applyCooldownAfterArrivals(completingMoves);
+}
+
+void GameEngine::processMoveResolutions(
+    const std::vector<realtime::MoveResolution>& resolutions) {
+    for (const realtime::MoveResolution& resolution : resolutions) {
+        if (resolution.kind == realtime::MoveResolution::Kind::CompletedMove) {
+            move_log_.recordCompletedMove(resolution.completed);
+        } else {
+            move_log_.recordJumpCapture(resolution.jump_capture);
+        }
+    }
 }
 
 bool GameEngine::requestMove(const model::Position& from, const model::Position& to) {

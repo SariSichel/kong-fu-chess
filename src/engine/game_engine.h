@@ -9,6 +9,7 @@
 #include "../model/position.h"
 #include "../realtime/motion.h"
 #include "../realtime/real_time_arbiter.h"
+#include "move_log.h"
 
 namespace engine {
 
@@ -34,8 +35,10 @@ public:
 
     int elapsedMs() const;
     const std::vector<realtime::Motion>& activeMotions() const;
+    const MoveLog& moveLog() const { return move_log_; }
 
 private:
+    void processMoveResolutions(const std::vector<realtime::MoveResolution>& resolutions);
     struct Premove {
         model::Position from;
         model::Position to;
@@ -55,6 +58,7 @@ private:
 
     model::Board board_;
     realtime::RealTimeArbiter arbiter_;
+    MoveLog move_log_;
     bool is_game_over_ = false;
     std::map<PremoveKey, Premove> premoves_;
     uint64_t next_motion_id_ = 0;

@@ -10,6 +10,7 @@
 
 #include "constants.h"
 #include "engine/game_engine.h"
+#include "engine/move_log.h"
 #include "input/board_mapper.h"
 #include "input/controller.h"
 #include "io/board_parser.h"
@@ -1354,4 +1355,112 @@ TEST_CASE("jump: command integration via the command processor") {
     CHECK(runInput(" Board:\nwR . . bR\nCommands:\nclick 361 64\nclick 61 64\nwait 2500\n"
                    "jump 61 64\nwait 500\nprint board\nwait 500\nprint board") ==
           "wR . . .\nwR . . .\n");
+}
+
+TEST_CASE("move log: formats elapsed time as MM:SS") {
+    CHECK(engine::MoveLog::formatElapsedMMSS(0) == "00:00");
+    CHECK(engine::MoveLog::formatElapsedMMSS(65000) == "01:05");
+    CHECK(engine::MoveLog::formatElapsedMMSS(372000) == "06:12");
+}
+
+TEST_CASE("move log: formats algebraic squares") {
+    CHECK(engine::MoveLog::positionToAlgebraic(pos(7, 0)) == "a1");
+    CHECK(engine::MoveLog::positionToAlgebraic(pos(0, 7)) == "h8");
+}
+
+TEST_CASE("move log: records completed moves with arrival timestamp") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 2);
+
+    const int arrivalMs = static_cast<int>(moveDurationMs(0, 0, 0, 2));
+    engine.advanceTime(arrivalMs);
+
+    REQUIRE(engine.moveLog().entries().size() == 1);
+    CHECK(engine.moveLog().entries()[0].timestamp_ms == arrivalMs);
+    CHECK(engine.moveLog().entries()[0].text ==
+          engine::MoveLog::formatElapsedMMSS(arrivalMs) + " wR a8->c8");
+    CHECK(engine.moveLog().whiteScore() == 0);
+    CHECK(engine.moveLog().blackScore() == 0);
+}
+
+TEST_CASE("move log: awards capture points to the capturing side") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Queen, Color::Black)});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 3);
+
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 3)));
+
+    CHECK(engine.moveLog().whiteScore() == 9);
+    CHECK(engine.moveLog().blackScore() == 0);
+    REQUIRE(engine.moveLog().entries().size() == 1);
+    CHECK(engine.moveLog().entries()[0].text.find(" xbQ") != std::string::npos);
+}
+
+TEST_CASE("move log: king capture is logged but awards zero points") {
+    Board board = makeBasicKingCaptureBoard();
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 3);
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 3)));
+
+    CHECK(engine.moveLog().whiteScore() == 0);
+    REQUIRE(engine.moveLog().entries().size() == 1);
+    CHECK(engine.moveLog().entries()[0].text.find(" xbK") != std::string::npos);
+}
+
+TEST_CASE("move log: jump capture is logged and scored for the jumper") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::Black)});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 3);
+    clickSquare(engine, controller, 0, 0);
+
+    engine.advanceTime(static_cast<int>(2500));
+    jumpSquare(engine, controller, 0, 0);
+    engine.advanceTime(static_cast<int>(500));
+
+    CHECK(engine.moveLog().whiteScore() == 5);
+    REQUIRE(engine.moveLog().entries().size() == 1);
+    CHECK(engine.moveLog().entries()[0].text.find(" jump x bR ") != std::string::npos);
+    CHECK(engine.moveLog().entries()[0].text.find("@a8") != std::string::npos);
+}
+
+TEST_CASE("move log: simultaneous arrival tie produces no log entry or score") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(),
+                  Piece(PieceType::King, Color::Black), Piece::empty()});
+    board.addRow({Piece::empty(), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::White)});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 2);
+    clickSquare(engine, controller, 1, 3);
+    clickSquare(engine, controller, 0, 2);
+
+    engine.advanceTime(static_cast<int>(moveDurationMs(1, 3, 0, 2)));
+
+    CHECK(engine.moveLog().entries().empty());
+    CHECK(engine.moveLog().whiteScore() == 0);
+    CHECK(engine.moveLog().blackScore() == 0);
 }

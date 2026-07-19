@@ -45,6 +45,17 @@ constexpr std::int64_t kMoveCooldownMs = 1000;
 constexpr std::int64_t kJumpCooldownMs = 2000;
 }  // namespace GameConfig
 
+namespace HudConfig {
+constexpr int kPanelWidth = 280;
+constexpr int kPadding = 12;
+constexpr int kLineHeight = 22;
+constexpr int kScoreFontScaleTimes100 = 55;
+constexpr int kBodyFontScaleTimes100 = 40;
+constexpr int kTitleFontScaleTimes100 = 45;
+constexpr int kMaxMoveLogLines = 12;
+constexpr int kTextThickness = 1;
+}  // namespace HudConfig
+
 namespace AssetPaths {
 constexpr const char* kAssetsRoot =
     R"(C:\Users\saris\OneDrive\Documents\bootcamp\assets\assets)";
