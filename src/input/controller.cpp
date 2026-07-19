@@ -17,10 +17,10 @@ void Controller::handleClick(engine::GameEngine& gameEngine, int x, int y) {
 
     model::Board& board = gameEngine.board();
     const model::Position clicked = BoardMapper::toPosition(x, y);
-    if (clicked.row < 0) {
-        return;
-    }
-    if (!board.inBounds(clicked)) {
+    if (clicked.row < 0 || !board.inBounds(clicked)) {
+        if (hasSelection()) {
+            clearSelection();
+        }
         return;
     }
 
@@ -48,6 +48,14 @@ void Controller::handleClick(engine::GameEngine& gameEngine, int x, int y) {
             if (gameEngine.getActiveMoveDestination(selected_square_, destination)) {
                 gameEngine.queuePremove(selected_square_, destination, clicked);
             }
+        }
+        clearSelection();
+        return;
+    }
+
+    if (clickedPiece.isEmpty()) {
+        if (rules::RuleEngine::validateMove(board, selected_square_, clicked)) {
+            gameEngine.requestMove(selected_square_, clicked);
         }
         clearSelection();
         return;

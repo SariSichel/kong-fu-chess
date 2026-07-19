@@ -1067,6 +1067,65 @@ TEST_CASE("game over: reset clears game-over flag") {
     CHECK_FALSE(engine.isGameOver());
 }
 
+// --- Deselect tests ---
+
+TEST_CASE("deselect: click outside pixel board area clears selection") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty()});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    CHECK(controller.hasSelection());
+
+    controller.handleClick(engine, 0, 0);
+    CHECK_FALSE(controller.hasSelection());
+}
+
+TEST_CASE("deselect: click outside board grid clears selection") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty()});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    CHECK(controller.hasSelection());
+
+    clickSquare(engine, controller, 1, 0);
+    CHECK_FALSE(controller.hasSelection());
+}
+
+TEST_CASE("deselect: click invalid empty destination clears selection") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty()});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    CHECK(controller.hasSelection());
+
+    clickSquare(engine, controller, 0, 2);
+    CHECK_FALSE(controller.hasSelection());
+    CHECK(hasRookAt(engine.board(), 0, 0));
+}
+
+TEST_CASE("deselect: valid move to empty cell still executes") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty()});
+    engine::GameEngine engine;
+    input::Controller controller;
+    copyBoardIntoEngine(engine, board);
+
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 1);
+
+    CHECK_FALSE(controller.hasSelection());
+    CHECK(isPieceMovingAt(engine, 0, 0));
+}
+
 // --- Jump ("Airborne") mechanic tests ---
 
 TEST_CASE("jump: normal landing returns to idle on the same cell") {
