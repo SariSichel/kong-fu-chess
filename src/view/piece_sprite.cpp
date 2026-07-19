@@ -9,7 +9,7 @@ namespace view {
 namespace {
 
 constexpr const char* kPiecesRoot =
-    R"(C:\Users\saris\OneDrive\Documents\bootcamp\CTD26\pieces2)";
+    R"(C:\Users\saris\OneDrive\Documents\bootcamp\assets\assets\pieces_mine)";
 
 char pieceTypeToChar(model::PieceType type) {
     switch (type) {
@@ -35,8 +35,8 @@ char pieceTypeToChar(model::PieceType type) {
 
 std::string pieceToSpriteCode(const model::Piece& piece) {
     const char typeChar = pieceTypeToChar(piece.type());
-    const char colorChar = piece.color() == model::Color::White ? 'W' : 'B';
-    return std::string({typeChar, colorChar});
+    const char colorChar = piece.color() == model::Color::White ? 'w' : 'b';
+    return std::string({colorChar, typeChar});
 }
 
 std::string idleSpritePath(const std::string& pieceCode) {

@@ -1135,7 +1135,7 @@ TEST_CASE("jump: airborne piece captures an arriving enemy and stays put") {
     CHECK(engine.board().cell(pos(0, 3)).isEmpty());
 
     // The jump keeps running to its full duration, then lands in place.
-    engine.advanceTime(static_cast<int>(500));
+    engine.advanceTime(static_cast<int>(GameConfig::kJumpDurationMs - 500));
     CHECK(hasRookAt(engine.board(), 0, 0, Color::White));
     CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
 }
@@ -1241,16 +1241,16 @@ TEST_CASE("jump: cannot start a second jump while already airborne") {
     input::Controller controller;
     copyBoardIntoEngine(engine, board);
 
-    jumpSquare(engine, controller, 0, 0);  // airborne 0..1000
+    jumpSquare(engine, controller, 0, 0);
 
     // Halfway through, a second jump request must be ignored (does not extend it).
-    engine.advanceTime(static_cast<int>(500));
+    engine.advanceTime(static_cast<int>(GameConfig::kJumpDurationMs / 2));
     jumpSquare(engine, controller, 0, 0);
     CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Airborne);
 
-    // If the second jump had registered (500..1500) the piece would still be
-    // airborne at t=1000; instead the original jump lands exactly on time.
-    engine.advanceTime(static_cast<int>(500));
+    // If the second jump had registered, the piece would still be airborne at the
+    // original landing time; instead the first jump lands exactly on schedule.
+    engine.advanceTime(static_cast<int>(GameConfig::kJumpDurationMs / 2));
     CHECK(movementStateAt(engine, 0, 0) == TestMovementState::Idle);
     CHECK(hasRookAt(engine.board(), 0, 0));
 }
