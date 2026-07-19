@@ -45,6 +45,11 @@ constexpr std::int64_t kMoveCooldownMs = 1000;
 constexpr std::int64_t kJumpCooldownMs = 2000;
 }  // namespace GameConfig
 
+namespace NetworkConfig {
+constexpr int kDefaultPort = 8765;
+constexpr int kMaxPlayers = 2;
+}  // namespace NetworkConfig
+
 namespace HudConfig {
 constexpr int kPanelWidth = 280;
 constexpr int kPadding = 12;

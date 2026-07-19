@@ -77,7 +77,7 @@ void Renderer::init(const std::string& boardImagePath) {
 }
 
 void Renderer::drawFrame(const engine::GameEngine& gameEngine,
-                         const input::Controller& controller) {
+                         const input::Controller& controller, const char* window_name) {
     if (board_canvas_.empty()) {
         throw std::runtime_error("Renderer not initialized; call init() first.");
     }
@@ -87,13 +87,13 @@ void Renderer::drawFrame(const engine::GameEngine& gameEngine,
     drawScene(canvas, gameEngine);
     drawSelectionOverlay(canvas, controller);
     drawHud(canvas, board_canvas_.cols, gameEngine);
-    cv::imshow(kWindowName, canvas);
+    cv::imshow(window_name, canvas);
 }
 
 void Renderer::render(const engine::GameEngine& gameEngine, const input::Controller& controller,
                       const std::string& boardImagePath) {
     init(boardImagePath);
-    drawFrame(gameEngine, controller);
+    drawFrame(gameEngine, controller, kWhiteWindowName);
     cv::waitKey(0);
     cv::destroyAllWindows();
 }

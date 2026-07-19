@@ -10,7 +10,15 @@
 
 #include "constants.h"
 #include "engine/game_engine.h"
+#include "events/event_bus.h"
+#include "events/game_event.h"
 #include "engine/move_log.h"
+#include "io/algebraic.h"
+#include "session/session_manager.h"
+#include "session/shell_login.h"
+#include "network/ws_protocol.h"
+#include "network/command_queue.h"
+#include "network/network_input.h"
 #include "input/board_mapper.h"
 #include "input/controller.h"
 #include "io/board_parser.h"
@@ -1368,6 +1376,39 @@ TEST_CASE("move log: formats algebraic squares") {
     CHECK(engine::MoveLog::positionToAlgebraic(pos(0, 7)) == "h8");
 }
 
+TEST_CASE("algebraic: positionToAlgebraic matches move log helper") {
+    CHECK(io::positionToAlgebraic(pos(7, 0)) == "a1");
+    CHECK(io::positionToAlgebraic(pos(0, 7)) == "h8");
+    CHECK(io::positionToAlgebraic(pos(4, 4)) == "e4");
+    CHECK(io::positionToAlgebraic(pos(-1, -1)) == "??");
+}
+
+TEST_CASE("algebraic: algebraicToPosition parses valid squares") {
+    CHECK(io::algebraicToPosition("a1") == pos(7, 0));
+    CHECK(io::algebraicToPosition("h8") == pos(0, 7));
+    CHECK(io::algebraicToPosition("e4") == pos(4, 4));
+}
+
+TEST_CASE("algebraic: round trip preserves board coordinates") {
+    const std::vector<Position> samples = {
+        pos(0, 0), pos(0, 7), pos(7, 0), pos(7, 7), pos(3, 2), pos(6, 5),
+    };
+
+    for (const Position& sample : samples) {
+        CHECK(io::algebraicToPosition(io::positionToAlgebraic(sample)) == sample);
+    }
+}
+
+TEST_CASE("algebraic: invalid squares map to sentinel position") {
+    const Position invalid(-1, -1);
+    CHECK(io::algebraicToPosition("") == invalid);
+    CHECK(io::algebraicToPosition("a") == invalid);
+    CHECK(io::algebraicToPosition("a9") == invalid);
+    CHECK(io::algebraicToPosition("i1") == invalid);
+    CHECK(io::algebraicToPosition("a0") == invalid);
+    CHECK(io::algebraicToPosition("abc") == invalid);
+}
+
 TEST_CASE("move log: records completed moves with arrival timestamp") {
     Board board = makeCommonRouteBoard();
     engine::GameEngine engine;
@@ -1441,6 +1482,423 @@ TEST_CASE("move log: jump capture is logged and scored for the jumper") {
     REQUIRE(engine.moveLog().entries().size() == 1);
     CHECK(engine.moveLog().entries()[0].text.find(" jump x bR ") != std::string::npos);
     CHECK(engine.moveLog().entries()[0].text.find("@a8") != std::string::npos);
+}
+
+TEST_CASE("event bus: delivers published events in order") {
+    events::EventBus bus;
+    std::vector<events::GameEventType> received;
+
+    bus.subscribe([&received](const events::GameEvent& event) {
+        received.push_back(events::eventType(event));
+    });
+
+    bus.publish(events::GameStarted{"alice", "bob", 8765});
+
+    realtime::CompletedMoveEvent move;
+    move.piece_type = PieceType::Pawn;
+    move.piece_color = Color::White;
+    move.from = pos(6, 4);
+    move.to = pos(4, 4);
+    bus.publish(move);
+
+    realtime::JumpCaptureEvent jump;
+    jump.jumper_color = Color::White;
+    jump.victim_color = Color::Black;
+    bus.publish(jump);
+
+    REQUIRE(received.size() == 3);
+    CHECK(received[0] == events::GameEventType::GameStarted);
+    CHECK(received[1] == events::GameEventType::MoveCompleted);
+    CHECK(received[2] == events::GameEventType::JumpCapture);
+}
+
+TEST_CASE("event bus: unsubscribe stops delivery") {
+    events::EventBus bus;
+    int call_count = 0;
+
+    const events::EventBus::SubscriptionId id =
+        bus.subscribe([&call_count](const events::GameEvent&) { ++call_count; });
+
+    bus.publish(events::GameStarted{"alice", "bob", 8765});
+    REQUIRE(call_count == 1);
+
+    bus.unsubscribe(id);
+    bus.publish(events::GameStarted{"carol", "dave", 8765});
+    CHECK(call_count == 1);
+}
+
+TEST_CASE("event bus: multiple subscribers receive the same event") {
+    events::EventBus bus;
+    int first_count = 0;
+    int second_count = 0;
+
+    bus.subscribe([&first_count](const events::GameEvent& event) {
+        if (events::eventType(event) == events::GameEventType::GameStarted) {
+            ++first_count;
+        }
+    });
+    bus.subscribe([&second_count](const events::GameEvent& event) {
+        if (events::eventType(event) == events::GameEventType::GameStarted) {
+            ++second_count;
+        }
+    });
+
+    bus.publish(events::GameStarted{"alice", "bob", 8765});
+
+    CHECK(first_count == 1);
+    CHECK(second_count == 1);
+}
+
+TEST_CASE("event bus: GameStarted payload is preserved") {
+    events::EventBus bus;
+    std::string white_user;
+    std::string black_user;
+    int port = 0;
+
+    bus.subscribe([&](const events::GameEvent& event) {
+        REQUIRE(events::eventType(event) == events::GameEventType::GameStarted);
+        const auto& started = std::get<events::GameStarted>(event);
+        white_user = started.white_user;
+        black_user = started.black_user;
+        port = started.port;
+    });
+
+    bus.publish(events::GameStarted{"alice", "bob", 8765});
+
+    CHECK(white_user == "alice");
+    CHECK(black_user == "bob");
+    CHECK(port == 8765);
+}
+
+TEST_CASE("shell login: reads two distinct usernames") {
+    std::istringstream in("alice\nbob\n");
+    std::ostringstream out;
+
+    const session::TwoPlayerNames names = session::ShellLogin::readTwoPlayerNames(in, out);
+
+    CHECK(names.white_user == "alice");
+    CHECK(names.black_user == "bob");
+}
+
+TEST_CASE("shell login: rejects empty and duplicate usernames") {
+    {
+        std::istringstream in("\nalice\nbob\n");
+        std::ostringstream out;
+
+        const session::TwoPlayerNames names = session::ShellLogin::readTwoPlayerNames(in, out);
+
+        CHECK(names.white_user == "alice");
+        CHECK(names.black_user == "bob");
+        CHECK(out.str().find("Username cannot be empty") != std::string::npos);
+    }
+
+    {
+        std::istringstream in("alice\nalice\nbob\n");
+        std::ostringstream out;
+
+        const session::TwoPlayerNames names = session::ShellLogin::readTwoPlayerNames(in, out);
+
+        CHECK(names.white_user == "alice");
+        CHECK(names.black_user == "bob");
+        CHECK(out.str().find("Username must differ from Player 1") != std::string::npos);
+    }
+}
+
+TEST_CASE("session manager: rejects unknown usernames") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+
+    CHECK(session.authenticate(1, "carol") == session::AuthResult::UnknownUser);
+    CHECK_FALSE(session.colorFor(1).has_value());
+    CHECK_FALSE(session.isReady());
+}
+
+TEST_CASE("session manager: assigns white then black to roster players") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+
+    CHECK(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    CHECK(session.colorFor(1) == Color::White);
+    CHECK(session.colorForUsername("alice") == Color::White);
+    CHECK_FALSE(session.isReady());
+
+    CHECK(session.authenticate(2, "bob") == session::AuthResult::Accepted);
+    CHECK(session.colorFor(2) == Color::Black);
+    CHECK(session.isReady());
+}
+
+TEST_CASE("session manager: rejects third connection and duplicate username login") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+
+    REQUIRE(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticate(2, "bob") == session::AuthResult::Accepted);
+
+    CHECK(session.authenticate(3, "alice") == session::AuthResult::AlreadyConnected);
+    CHECK(session.authenticate(4, "bob") == session::AuthResult::AlreadyConnected);
+}
+
+TEST_CASE("session manager: rejects extra connection when slots are full") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+
+    REQUIRE(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticate(2, "bob") == session::AuthResult::Accepted);
+
+    session.disconnect(2);
+    REQUIRE(session.authenticate(2, "alice") == session::AuthResult::AlreadyConnected);
+    REQUIRE(session.authenticate(3, "bob") == session::AuthResult::Accepted);
+    CHECK(session.authenticate(4, "bob") == session::AuthResult::AlreadyConnected);
+}
+
+TEST_CASE("session manager: roster snapshot matches configured players") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+
+    const events::GameStarted snapshot = session.rosterSnapshot();
+
+    CHECK(snapshot.white_user == "alice");
+    CHECK(snapshot.black_user == "bob");
+    CHECK(snapshot.port == NetworkConfig::kDefaultPort);
+}
+
+TEST_CASE("session manager: disconnect frees a slot") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+
+    REQUIRE(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticate(2, "bob") == session::AuthResult::Accepted);
+    REQUIRE(session.isReady());
+
+    session.disconnect(2);
+    CHECK_FALSE(session.isReady());
+    CHECK(session.authenticate(3, "bob") == session::AuthResult::Accepted);
+    CHECK(session.isReady());
+}
+
+TEST_CASE("game engine: publishes completed move events to EventBus") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    input::Controller controller;
+    events::EventBus bus;
+    std::vector<realtime::CompletedMoveEvent> received_moves;
+
+    engine.setEventBus(&bus);
+    bus.subscribe([&received_moves](const events::GameEvent& event) {
+        if (events::eventType(event) == events::GameEventType::MoveCompleted) {
+            received_moves.push_back(std::get<realtime::CompletedMoveEvent>(event));
+        }
+    });
+
+    copyBoardIntoEngine(engine, board);
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 2);
+
+    const int arrival_ms = static_cast<int>(moveDurationMs(0, 0, 0, 2));
+    engine.advanceTime(arrival_ms);
+
+    REQUIRE(received_moves.size() == 1);
+    CHECK(received_moves[0].piece_type == PieceType::Rook);
+    CHECK(received_moves[0].piece_color == Color::White);
+    CHECK(received_moves[0].from == pos(0, 0));
+    CHECK(received_moves[0].to == pos(0, 2));
+    CHECK(received_moves[0].timestamp_ms == arrival_ms);
+}
+
+TEST_CASE("game engine: publishes jump capture events to EventBus") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::Black)});
+    engine::GameEngine engine;
+    input::Controller controller;
+    events::EventBus bus;
+    std::vector<realtime::JumpCaptureEvent> received_jumps;
+
+    engine.setEventBus(&bus);
+    bus.subscribe([&received_jumps](const events::GameEvent& event) {
+        if (events::eventType(event) == events::GameEventType::JumpCapture) {
+            received_jumps.push_back(std::get<realtime::JumpCaptureEvent>(event));
+        }
+    });
+
+    copyBoardIntoEngine(engine, board);
+    clickSquare(engine, controller, 0, 3);
+    clickSquare(engine, controller, 0, 0);
+
+    engine.advanceTime(static_cast<int>(2500));
+    jumpSquare(engine, controller, 0, 0);
+    engine.advanceTime(static_cast<int>(500));
+
+    REQUIRE(received_jumps.size() == 1);
+    CHECK(received_jumps[0].jumper_type == PieceType::Rook);
+    CHECK(received_jumps[0].jumper_color == Color::White);
+    CHECK(received_jumps[0].victim_type == PieceType::Rook);
+    CHECK(received_jumps[0].victim_color == Color::Black);
+    CHECK(received_jumps[0].jump_square == pos(0, 0));
+}
+
+TEST_CASE("game engine: does not publish when EventBus is not attached") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    input::Controller controller;
+    events::EventBus bus;
+    int published_count = 0;
+
+    bus.subscribe([&published_count](const events::GameEvent&) { ++published_count; });
+
+    copyBoardIntoEngine(engine, board);
+    clickSquare(engine, controller, 0, 0);
+    clickSquare(engine, controller, 0, 2);
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 2)));
+
+    CHECK(published_count == 0);
+    REQUIRE(engine.moveLog().entries().size() == 1);
+}
+
+TEST_CASE("ws protocol: parses client login move and jump messages") {
+    const std::optional<network::ClientCommand> login =
+        network::parseClientMessage(R"({"type":"login","username":"alice"})");
+    REQUIRE(login.has_value());
+    CHECK(network::clientCommandType(*login) == network::ClientCommandType::Login);
+    CHECK(std::get<network::LoginCommand>(*login).username == "alice");
+
+    const std::optional<network::ClientCommand> move =
+        network::parseClientMessage(R"({"type":"move","from":"e2","to":"e4"})");
+    REQUIRE(move.has_value());
+    CHECK(network::clientCommandType(*move) == network::ClientCommandType::Move);
+    CHECK(std::get<network::MoveCommand>(*move).from == "e2");
+    CHECK(std::get<network::MoveCommand>(*move).to == "e4");
+
+    const std::optional<network::ClientCommand> jump =
+        network::parseClientMessage(R"({"type":"jump","square":"e4"})");
+    REQUIRE(jump.has_value());
+    CHECK(network::clientCommandType(*jump) == network::ClientCommandType::Jump);
+    CHECK(std::get<network::JumpCommand>(*jump).square == "e4");
+}
+
+TEST_CASE("ws protocol: rejects invalid client messages") {
+    CHECK_FALSE(network::parseClientMessage("").has_value());
+    CHECK_FALSE(network::parseClientMessage("{}").has_value());
+    CHECK_FALSE(network::parseClientMessage(R"({"type":"unknown"})").has_value());
+    CHECK_FALSE(network::parseClientMessage(R"({"type":"login"})").has_value());
+    CHECK_FALSE(network::parseClientMessage(R"({"type":"move","from":"e2"})").has_value());
+    CHECK_FALSE(network::parseClientMessage(R"({"type":"jump"})").has_value());
+}
+
+TEST_CASE("ws protocol: serializes server events and responses") {
+    const std::string started =
+        network::serializeServerEvent(events::GameStarted{"alice", "bob", 8765});
+    CHECK(started.find(R"("type":"game_started")") != std::string::npos);
+    CHECK(started.find(R"("white":"alice")") != std::string::npos);
+    CHECK(started.find(R"("black":"bob")") != std::string::npos);
+    CHECK(started.find(R"("port":8765)") != std::string::npos);
+
+    realtime::CompletedMoveEvent move;
+    move.timestamp_ms = 1000;
+    move.piece_type = PieceType::Rook;
+    move.piece_color = Color::White;
+    move.from = pos(0, 0);
+    move.to = pos(0, 2);
+    move.captured_type = PieceType::Queen;
+    move.captured_color = Color::Black;
+
+    const std::string move_json = network::serializeServerEvent(move);
+    CHECK(move_json.find(R"("type":"move_completed")") != std::string::npos);
+    CHECK(move_json.find(R"("from":"a8")") != std::string::npos);
+    CHECK(move_json.find(R"("to":"c8")") != std::string::npos);
+    CHECK(move_json.find(R"("piece":"wR")") != std::string::npos);
+    CHECK(move_json.find(R"("captured":"bQ")") != std::string::npos);
+
+    const std::string error = network::serializeErrorMessage(R"(bad "move")");
+    CHECK(error.find(R"("type":"error")") != std::string::npos);
+    CHECK(error.find(R"("message":"bad \"move\"")") != std::string::npos);
+
+    const std::string login_ok = network::serializeLoginOk("white");
+    CHECK(login_ok == R"({"type":"login_ok","color":"white"})");
+
+    const std::string login = network::serializeLoginCommand("alice");
+    CHECK(login == R"({"type":"login","username":"alice"})");
+
+    const std::string move_cmd = network::serializeMoveCommand("e2", "e4");
+    CHECK(move_cmd == R"({"type":"move","from":"e2","to":"e4"})");
+
+    const std::string jump_cmd = network::serializeJumpCommand("e4");
+    CHECK(jump_cmd == R"({"type":"jump","square":"e4"})");
+}
+
+TEST_CASE("command queue: drains pushed commands in order") {
+    network::CommandQueue queue;
+    std::vector<network::QueuedCommand> drained;
+
+    queue.push({1, network::LoginCommand{"alice"}});
+    queue.push({2, network::MoveCommand{"e2", "e4"}});
+    queue.drain(drained);
+
+    REQUIRE(drained.size() == 2);
+    CHECK(drained[0].connection_id == 1);
+    CHECK(network::clientCommandType(drained[0].command) == network::ClientCommandType::Login);
+    CHECK(drained[1].connection_id == 2);
+    CHECK(network::clientCommandType(drained[1].command) == network::ClientCommandType::Move);
+
+    queue.drain(drained);
+    CHECK(drained.empty());
+}
+
+TEST_CASE("network input: color gate allows own pieces and rejects opponent pieces") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::Black)});
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+    engine::GameEngine engine;
+    network::NetworkInputHandler input(session, engine);
+
+    copyBoardIntoEngine(engine, board);
+    REQUIRE(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticate(2, "bob") == session::AuthResult::Accepted);
+
+    CHECK(input.handleMove(1, pos(0, 0), pos(0, 2)));
+    CHECK_FALSE(input.handleMove(1, pos(0, 3), pos(0, 1)));
+    CHECK(input.handleMove(2, pos(0, 3), pos(0, 1)));
+    CHECK_FALSE(input.handleMove(2, pos(0, 0), pos(0, 2)));
+}
+
+TEST_CASE("network input: rejects unauthenticated connections and invalid squares") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece::empty()});
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+    engine::GameEngine engine;
+    network::NetworkInputHandler input(session, engine);
+
+    copyBoardIntoEngine(engine, board);
+
+    CHECK_FALSE(input.handleMove(1, pos(0, 0), pos(0, 2)));
+    CHECK_FALSE(input.handleMove(1, "a8", "z9"));
+
+    REQUIRE(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    CHECK_FALSE(input.handleMove(1, pos(0, 1), pos(0, 2)));
+    CHECK(input.handleMove(1, "a8", "c8"));
+}
+
+TEST_CASE("network input: jump requires controlling the piece color") {
+    Board board;
+    board.addRow({Piece(PieceType::Rook, Color::White), Piece::empty(), Piece::empty(),
+                  Piece(PieceType::Rook, Color::Black)});
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+    engine::GameEngine engine;
+    network::NetworkInputHandler input(session, engine);
+
+    copyBoardIntoEngine(engine, board);
+    REQUIRE(session.authenticate(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticate(2, "bob") == session::AuthResult::Accepted);
+
+    CHECK(input.handleJump(1, pos(0, 0)));
+    CHECK_FALSE(input.handleJump(1, pos(0, 3)));
+    CHECK(input.handleJump(2, pos(0, 3)));
+    CHECK_FALSE(input.handleJump(2, pos(0, 0)));
+}
+
+TEST_CASE("network input: handleLogin delegates to session manager") {
+    session::SessionManager session("alice", "bob", NetworkConfig::kDefaultPort);
+    engine::GameEngine engine;
+    network::NetworkInputHandler input(session, engine);
+
+    CHECK(input.handleLogin(1, "alice") == session::AuthResult::Accepted);
+    CHECK(input.handleLogin(2, "carol") == session::AuthResult::UnknownUser);
 }
 
 TEST_CASE("move log: simultaneous arrival tie produces no log entry or score") {

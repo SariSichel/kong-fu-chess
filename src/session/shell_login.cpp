@@ -1,0 +1,68 @@
+#include "shell_login.h"
+
+#include <istream>
+#include <ostream>
+#include <string>
+
+namespace session {
+
+namespace {
+
+std::string trimCopy(const std::string& value) {
+    const std::size_t start = value.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+
+    const std::size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+std::string readNonEmptyUsername(std::istream& in, std::ostream& out, const char* prompt) {
+    while (true) {
+        out << prompt << std::flush;
+
+        std::string line;
+        if (!std::getline(in, line)) {
+            return "";
+        }
+
+        const std::string username = trimCopy(line);
+        if (username.empty()) {
+            out << "Username cannot be empty.\n";
+            continue;
+        }
+
+        return username;
+    }
+}
+
+}  // namespace
+
+TwoPlayerNames ShellLogin::readTwoPlayerNames(std::istream& in, std::ostream& out) {
+    TwoPlayerNames names;
+    names.white_user =
+        readNonEmptyUsername(in, out, "Player 1 (White) username: ");
+    if (names.white_user.empty()) {
+        return names;
+    }
+
+    while (true) {
+        names.black_user =
+            readNonEmptyUsername(in, out, "Player 2 (Black) username: ");
+        if (names.black_user.empty()) {
+            return names;
+        }
+
+        if (names.black_user == names.white_user) {
+            out << "Username must differ from Player 1.\n";
+            continue;
+        }
+
+        break;
+    }
+
+    return names;
+}
+
+}  // namespace session

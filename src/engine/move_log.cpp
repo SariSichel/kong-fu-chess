@@ -1,5 +1,6 @@
 #include "move_log.h"
 
+#include "../io/algebraic.h"
 #include <sstream>
 #include <string>
 
@@ -45,13 +46,7 @@ std::string MoveLog::formatElapsedMMSS(int timestampMs) {
 }
 
 std::string MoveLog::positionToAlgebraic(const model::Position& pos) {
-    if (pos.row < 0 || pos.col < 0) {
-        return "??";
-    }
-
-    const char file = static_cast<char>('a' + pos.col);
-    const int rank = 8 - pos.row;
-    return std::string(1, file) + std::to_string(rank);
+    return io::positionToAlgebraic(pos);
 }
 
 std::string MoveLog::pieceLabel(model::PieceType type, model::Color color) {

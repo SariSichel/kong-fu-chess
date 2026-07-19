@@ -5,6 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/src/**",
+                "${workspaceFolder}/.deps/ixwebsocket-src",
+                "${workspaceFolder}/build/_deps/ixwebsocket-src",
                 "C:/Users/saris/OneDrive/Documents/bootcamp/CTD26/cpp/OpenCV_451/include"
             ],
             "defines": [

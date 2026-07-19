@@ -11,6 +11,10 @@
 #include "../realtime/real_time_arbiter.h"
 #include "move_log.h"
 
+namespace events {
+class EventBus;
+}
+
 namespace engine {
 
 class GameEngine {
@@ -29,6 +33,8 @@ public:
 
     void queuePremove(const model::Position& key, const model::Position& from,
                       const model::Position& to);
+
+    void setEventBus(events::EventBus* bus) { event_bus_ = bus; }
 
     model::Board& board() { return board_; }
     const model::Board& board() const { return board_; }
@@ -62,6 +68,7 @@ private:
     bool is_game_over_ = false;
     std::map<PremoveKey, Premove> premoves_;
     uint64_t next_motion_id_ = 0;
+    events::EventBus* event_bus_ = nullptr;
 };
 
 }  // namespace engine

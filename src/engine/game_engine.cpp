@@ -4,6 +4,8 @@
 #include <cstdlib>
 
 #include "../constants.h"
+#include "../events/event_bus.h"
+#include "../events/game_event.h"
 #include "../rules/rule_engine.h"
 
 namespace engine {
@@ -59,8 +61,14 @@ void GameEngine::processMoveResolutions(
     for (const realtime::MoveResolution& resolution : resolutions) {
         if (resolution.kind == realtime::MoveResolution::Kind::CompletedMove) {
             move_log_.recordCompletedMove(resolution.completed);
+            if (event_bus_ != nullptr) {
+                event_bus_->publish(resolution.completed);
+            }
         } else {
             move_log_.recordJumpCapture(resolution.jump_capture);
+            if (event_bus_ != nullptr) {
+                event_bus_->publish(resolution.jump_capture);
+            }
         }
     }
 }

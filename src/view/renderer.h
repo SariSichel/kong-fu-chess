@@ -27,10 +27,12 @@ namespace view {
 
 class Renderer {
 public:
-    static constexpr const char* kWindowName = "Image";
+    static constexpr const char* kWhiteWindowName = "Kong Fu Chess - White";
+    static constexpr const char* kBlackWindowName = "Kong Fu Chess - Black";
 
     void init(const std::string& boardImagePath);
-    void drawFrame(const engine::GameEngine& gameEngine, const input::Controller& controller);
+    void drawFrame(const engine::GameEngine& gameEngine, const input::Controller& controller,
+                   const char* window_name);
 
     void render(const engine::GameEngine& gameEngine, const input::Controller& controller,
                 const std::string& boardImagePath);

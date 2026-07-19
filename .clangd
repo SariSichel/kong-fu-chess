@@ -5,3 +5,5 @@ CompileFlags:
     - -Wextra
     - -IC:/Users/saris/OneDrive/Documents/bootcamp/kong-fu-chess/src
     - -IC:/Users/saris/OneDrive/Documents/bootcamp/CTD26/cpp/OpenCV_451/include
+    - -IC:/Users/saris/OneDrive/Documents/bootcamp/kong-fu-chess/.deps/ixwebsocket-src
+    - -IC:/Users/saris/OneDrive/Documents/bootcamp/kong-fu-chess/build/_deps/ixwebsocket-src
