@@ -28,6 +28,8 @@ void onMouse(int event, int x, int y, int /*flags*/, void* userdata) {
     auto* state = static_cast<AppState*>(userdata);
     if (event == cv::EVENT_LBUTTONDOWN) {
         state->controller->handleClick(*state->gameEngine, x, y);
+    } else if (event == cv::EVENT_RBUTTONDOWN) {
+        state->controller->handleJump(*state->gameEngine, x, y);
     }
 }
 

@@ -41,8 +41,8 @@ constexpr int kBoardOriginY = 14;
 constexpr int kNoSelection = -1;
 constexpr std::int64_t kMoveDurationMs = 1000;
 constexpr std::int64_t kJumpDurationMs = 1000;
-constexpr std::int64_t kMoveCooldownMs = 500;
-constexpr std::int64_t kJumpCooldownMs = 300;
+constexpr std::int64_t kMoveCooldownMs = 1000;
+constexpr std::int64_t kJumpCooldownMs = 2000;
 }  // namespace GameConfig
 
 namespace Text {
