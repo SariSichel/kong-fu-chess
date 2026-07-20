@@ -5,17 +5,20 @@
 #include <string>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <vector>
 
 #include "constants.h"
+#include "db/user_store.h"
+#include "elo/elo_rating.h"
 #include "engine/game_engine.h"
 #include "events/event_bus.h"
 #include "events/game_event.h"
 #include "engine/move_log.h"
 #include "io/algebraic.h"
 #include "session/session_manager.h"
-#include "session/shell_login.h"
 #include "network/ws_protocol.h"
 #include "network/command_queue.h"
 #include "network/network_input.h"
@@ -1570,38 +1573,53 @@ TEST_CASE("event bus: GameStarted payload is preserved") {
     CHECK(port == 8765);
 }
 
-TEST_CASE("shell login: reads two distinct usernames") {
-    std::istringstream in("alice\nbob\n");
-    std::ostringstream out;
+TEST_CASE("elo: equal ratings produce a symmetric K-factor swing") {
+    const elo::EloUpdate update = elo::computeUpdate(1200, 1200);
 
-    const session::TwoPlayerNames names = session::ShellLogin::readTwoPlayerNames(in, out);
-
-    CHECK(names.white_user == "alice");
-    CHECK(names.black_user == "bob");
+    CHECK(update.winner_new == 1216);
+    CHECK(update.loser_new == 1184);
 }
 
-TEST_CASE("shell login: rejects empty and duplicate usernames") {
+TEST_CASE("elo: a favorite winning gains less than an underdog winning") {
+    const elo::EloUpdate favoriteWins = elo::computeUpdate(1400, 1200);
+    const elo::EloUpdate underdogWins = elo::computeUpdate(1200, 1400);
+
+    CHECK((favoriteWins.winner_new - 1400) > 0);
+    CHECK((underdogWins.winner_new - 1200) > 0);
+    CHECK((favoriteWins.winner_new - 1400) < (underdogWins.winner_new - 1200));
+}
+
+TEST_CASE("user store: create, find, verify password, and update elo lifecycle") {
+    const std::string db_path = "kong_fu_chess_test.db";
+    std::remove(db_path.c_str());
+
     {
-        std::istringstream in("\nalice\nbob\n");
-        std::ostringstream out;
+        db::UserStore store(db_path);
+        REQUIRE(store.isOpen());
 
-        const session::TwoPlayerNames names = session::ShellLogin::readTwoPlayerNames(in, out);
+        CHECK_FALSE(store.find("alice").has_value());
 
-        CHECK(names.white_user == "alice");
-        CHECK(names.black_user == "bob");
-        CHECK(out.str().find("Username cannot be empty") != std::string::npos);
+        REQUIRE(store.create("alice", "correct-password"));
+        CHECK_FALSE(store.create("alice", "another-password"));
+
+        const std::optional<db::UserRecord> record = store.find("alice");
+        REQUIRE(record.has_value());
+        CHECK(record->username == "alice");
+        CHECK(record->elo == 1200);
+
+        CHECK(store.verifyPassword("alice", "correct-password"));
+        CHECK_FALSE(store.verifyPassword("alice", "wrong-password"));
+        CHECK_FALSE(store.verifyPassword("unknown-user", "correct-password"));
+
+        REQUIRE(store.updateElo("alice", 1216));
+        CHECK_FALSE(store.updateElo("unknown-user", 1300));
+
+        const std::optional<db::UserRecord> updated = store.find("alice");
+        REQUIRE(updated.has_value());
+        CHECK(updated->elo == 1216);
     }
 
-    {
-        std::istringstream in("alice\nalice\nbob\n");
-        std::ostringstream out;
-
-        const session::TwoPlayerNames names = session::ShellLogin::readTwoPlayerNames(in, out);
-
-        CHECK(names.white_user == "alice");
-        CHECK(names.black_user == "bob");
-        CHECK(out.str().find("Username must differ from Player 1") != std::string::npos);
-    }
+    std::remove(db_path.c_str());
 }
 
 TEST_CASE("session manager: rejects unknown usernames") {

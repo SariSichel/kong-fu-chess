@@ -1,6 +1,8 @@
 //git link:
 //https://github.com/SariSichel/kong-fu-chess/tree/main
 
+#include "db/user_store.h"
+#include "elo/elo_rating.h"
 #include "engine/game_engine.h"
 #include "events/event_bus.h"
 #include "input/controller.h"
@@ -17,6 +19,7 @@
 #include <opencv2/highgui.hpp>
 
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <variant>
 #include <vector>
@@ -125,7 +128,57 @@ int main() {
         return 1;
     }
 
+    db::UserStore store("kong_fu_chess.db");
+    if (!store.isOpen()) {
+        std::cerr << "Failed to open user database.\n";
+        return 1;
+    }
+
+    const auto authenticateOrRegister = [&store](const std::string& username,
+                                                  const std::string& password) {
+        if (store.find(username).has_value()) {
+            return store.verifyPassword(username, password);
+        }
+        return store.create(username, password);
+    };
+
+    if (!authenticateOrRegister(names.white_user, names.white_password)) {
+        std::cerr << "Authentication failed for '" << names.white_user << "'.\n";
+        return 1;
+    }
+
+    if (!authenticateOrRegister(names.black_user, names.black_password)) {
+        std::cerr << "Authentication failed for '" << names.black_user << "'.\n";
+        return 1;
+    }
+
     events::EventBus bus;
+    bus.subscribe([&store, &names](const events::GameEvent& event) {
+        const auto* ended = std::get_if<events::GameEnded>(&event);
+        if (ended == nullptr) {
+            return;
+        }
+
+        const bool white_won = ended->winner == model::Color::White;
+        const std::string& winner_name = white_won ? names.white_user : names.black_user;
+        const std::string& loser_name = white_won ? names.black_user : names.white_user;
+
+        const std::optional<db::UserRecord> winner_record = store.find(winner_name);
+        const std::optional<db::UserRecord> loser_record = store.find(loser_name);
+        if (!winner_record.has_value() || !loser_record.has_value()) {
+            return;
+        }
+
+        const elo::EloUpdate update =
+            elo::computeUpdate(winner_record->elo, loser_record->elo);
+        store.updateElo(winner_name, update.winner_new);
+        store.updateElo(loser_name, update.loser_new);
+
+        std::cout << winner_name << " wins! New ELO - " << winner_name << ": "
+                  << update.winner_new << ", " << loser_name << ": " << update.loser_new
+                  << '\n';
+    });
+
     session::SessionManager session(names.white_user, names.black_user,
                                     NetworkConfig::kDefaultPort);
 

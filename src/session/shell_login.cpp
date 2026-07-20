@@ -18,7 +18,8 @@ std::string trimCopy(const std::string& value) {
     return value.substr(start, end - start + 1);
 }
 
-std::string readNonEmptyUsername(std::istream& in, std::ostream& out, const char* prompt) {
+std::string readNonEmptyLine(std::istream& in, std::ostream& out, const char* prompt,
+                             const char* empty_message) {
     while (true) {
         out << prompt << std::flush;
 
@@ -27,14 +28,22 @@ std::string readNonEmptyUsername(std::istream& in, std::ostream& out, const char
             return "";
         }
 
-        const std::string username = trimCopy(line);
-        if (username.empty()) {
-            out << "Username cannot be empty.\n";
+        const std::string value = trimCopy(line);
+        if (value.empty()) {
+            out << empty_message << '\n';
             continue;
         }
 
-        return username;
+        return value;
     }
+}
+
+std::string readNonEmptyUsername(std::istream& in, std::ostream& out, const char* prompt) {
+    return readNonEmptyLine(in, out, prompt, "Username cannot be empty.");
+}
+
+std::string readPassword(std::istream& in, std::ostream& out, const char* prompt) {
+    return readNonEmptyLine(in, out, prompt, "Password cannot be empty.");
 }
 
 }  // namespace
@@ -44,6 +53,12 @@ TwoPlayerNames ShellLogin::readTwoPlayerNames(std::istream& in, std::ostream& ou
     names.white_user =
         readNonEmptyUsername(in, out, "Player 1 (White) username: ");
     if (names.white_user.empty()) {
+        return names;
+    }
+
+    names.white_password = readPassword(in, out, "Password: ");
+    if (names.white_password.empty()) {
+        names.white_user.clear();
         return names;
     }
 
@@ -60,6 +75,12 @@ TwoPlayerNames ShellLogin::readTwoPlayerNames(std::istream& in, std::ostream& ou
         }
 
         break;
+    }
+
+    names.black_password = readPassword(in, out, "Password: ");
+    if (names.black_password.empty()) {
+        names.black_user.clear();
+        return names;
     }
 
     return names;

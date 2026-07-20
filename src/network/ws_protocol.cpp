@@ -122,6 +122,11 @@ std::string serializeJumpCapture(const realtime::JumpCaptureEvent& event) {
     return out.str();
 }
 
+std::string serializeGameEnded(const events::GameEnded& event) {
+    const std::string winner_label = event.winner == model::Color::White ? "white" : "black";
+    return "{\"type\":\"game_ended\",\"winner\":" + quoteJsonString(winner_label) + '}';
+}
+
 }  // namespace
 
 std::optional<ClientCommand> parseClientMessage(const std::string& json) {
@@ -172,7 +177,11 @@ std::string serializeServerEvent(const events::GameEvent& event) {
         return serializeCompletedMove(std::get<realtime::CompletedMoveEvent>(event));
     }
 
-    return serializeJumpCapture(std::get<realtime::JumpCaptureEvent>(event));
+    if (std::holds_alternative<realtime::JumpCaptureEvent>(event)) {
+        return serializeJumpCapture(std::get<realtime::JumpCaptureEvent>(event));
+    }
+
+    return serializeGameEnded(std::get<events::GameEnded>(event));
 }
 
 std::string serializeErrorMessage(const std::string& message) {

@@ -15,6 +15,7 @@ void GameEngine::reset() {
     next_motion_id_ = 0;
     premoves_.clear();
     is_game_over_ = false;
+    winner_ = std::nullopt;
     move_log_.clear();
 }
 
@@ -184,6 +185,14 @@ void GameEngine::checkGameOverFromCompletingMoves(
         return;
     }
 
+    const auto endGame = [this](model::Color winnerColor) {
+        is_game_over_ = true;
+        winner_ = winnerColor;
+        if (event_bus_ != nullptr) {
+            event_bus_->publish(events::GameEnded{winnerColor});
+        }
+    };
+
     for (const realtime::Motion& motion : completingMoves) {
         if (motion.type != realtime::MotionType::Move) {
             continue;
@@ -198,12 +207,12 @@ void GameEngine::checkGameOverFromCompletingMoves(
         if (!destination.isEmpty() &&
             destination.type() == model::PieceType::King &&
             !destination.isFriendly(mover.color())) {
-            is_game_over_ = true;
+            endGame(mover.color());
             return;
         }
 
         if (isJumpActiveAt(arbiter_, motion.destination) && mover.type() == model::PieceType::King) {
-            is_game_over_ = true;
+            endGame(mover.color());
             return;
         }
     }

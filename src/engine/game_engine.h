@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "../model/board.h"
+#include "../model/piece.h"
 #include "../model/position.h"
 #include "../realtime/motion.h"
 #include "../realtime/real_time_arbiter.h"
@@ -21,6 +23,7 @@ class GameEngine {
 public:
     void reset();
     bool isGameOver() const { return is_game_over_; }
+    std::optional<model::Color> winner() const { return winner_; }
     void advanceTime(int ms);
 
     bool requestMove(const model::Position& from, const model::Position& to);
@@ -66,6 +69,7 @@ private:
     realtime::RealTimeArbiter arbiter_;
     MoveLog move_log_;
     bool is_game_over_ = false;
+    std::optional<model::Color> winner_;
     std::map<PremoveKey, Premove> premoves_;
     uint64_t next_motion_id_ = 0;
     events::EventBus* event_bus_ = nullptr;

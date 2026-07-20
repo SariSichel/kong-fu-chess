@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(kong_fu_chess LANGUAGES CXX)
+project(kong_fu_chess LANGUAGES C CXX)
 
 set(FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.deps" CACHE PATH
     "FetchContent downloads (kept outside build/ for IDE include paths)")
@@ -28,6 +28,23 @@ set(IXWEBSOCKET_IDE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.deps/ixwebsocket-s
 if(EXISTS "${ixwebsocket_SOURCE_DIR}")
     file(COPY "${ixwebsocket_SOURCE_DIR}/" DESTINATION "${IXWEBSOCKET_IDE_INCLUDE_DIR}")
 endif()
+
+# SQLite amalgamation (sqlite3.c + sqlite3.h) - user/ELO persistence (Phase 2).
+FetchContent_Declare(
+    sqlite3
+    URL https://sqlite.org/2026/sqlite-amalgamation-3530300.zip
+    URL_HASH SHA3_256=d45c688a8cb23f68611a894a756a12d7eb6ab6e9e2468ca70adbeab3808b5ab9
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(sqlite3)
+
+# PicoSHA2 - header-only SHA-256 used for password hashing (Phase 2).
+FetchContent_Declare(
+    picosha2
+    GIT_REPOSITORY https://github.com/okdshin/PicoSHA2.git
+    GIT_TAG v1.0.1
+)
+FetchContent_MakeAvailable(picosha2)
 
 find_package(Threads REQUIRED)
 
@@ -60,6 +77,9 @@ set(KONG_FU_CHESS_SOURCES
     src/network/ws_protocol.cpp
     src/network/command_queue.cpp
     src/network/network_input.cpp
+    src/db/user_store.cpp
+    src/elo/elo_rating.cpp
+    "${sqlite3_SOURCE_DIR}/sqlite3.c"
 )
 
 add_executable(kong_fu_chess
@@ -76,6 +96,8 @@ add_executable(kong_fu_chess
 target_include_directories(kong_fu_chess PRIVATE
     ${OPENCV_INCLUDE_DIR}
     ${ixwebsocket_SOURCE_DIR}
+    ${sqlite3_SOURCE_DIR}
+    ${picosha2_SOURCE_DIR}
 )
 target_link_directories(kong_fu_chess PRIVATE ${OPENCV_LIB_DIR})
 
@@ -123,10 +145,22 @@ add_executable(board_tests
     ${KONG_FU_CHESS_SOURCES}
 )
 
+target_include_directories(board_tests PRIVATE
+    ${sqlite3_SOURCE_DIR}
+    ${picosha2_SOURCE_DIR}
+)
+
 if(MSVC)
     target_compile_options(kong_fu_chess PRIVATE /W4)
     target_compile_options(board_tests PRIVATE /W4)
 else()
     target_compile_options(kong_fu_chess PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(board_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Vendored third-party amalgamation - don't apply our warning flags to it.
+if(MSVC)
+    set_source_files_properties("${sqlite3_SOURCE_DIR}/sqlite3.c" PROPERTIES COMPILE_OPTIONS "/W0")
+else()
+    set_source_files_properties("${sqlite3_SOURCE_DIR}/sqlite3.c" PROPERTIES COMPILE_OPTIONS "-w")
 endif()
