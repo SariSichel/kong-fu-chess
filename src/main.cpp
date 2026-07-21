@@ -5,6 +5,7 @@
 #include "input/controller.h"
 #include "io/board_setup.h"
 #include "network/client_game_sync.h"
+#include "network/client_message_queue.h"
 #include "network/command_queue.h"
 #include "network/local_ws_client.h"
 #include "network/network_input.h"
@@ -17,6 +18,7 @@
 #include "view/renderer.h"
 
 #include "constants.h"
+#include <ixwebsocket/IXNetSystem.h>
 #include <opencv2/highgui.hpp>
 
 #include <chrono>
@@ -27,7 +29,77 @@
 #include <variant>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace {
+
+#ifdef _WIN32
+// On Windows, IXWebSocket binds its listen socket with SO_REUSEADDR, which lets
+// multiple processes bind the same 127.0.0.1:port. Relying on bind() failure for
+// host election is therefore unreliable and can produce two "hosts" (a split-brain
+// where one process owns an empty authoritative engine and freezes). We elect a
+// single host out-of-band via a named mutex: the first process to create it hosts,
+// everyone else runs as a client. The mutex object lives as long as any handle is
+// open, so if the host exits/crashes a later instance can win election.
+HANDLE g_host_mutex = nullptr;
+
+bool acquireHostElection() {
+    g_host_mutex = CreateMutexW(nullptr, FALSE, L"Local\\KongFuChessHost");
+    if (g_host_mutex == nullptr) {
+        return false;
+    }
+
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(g_host_mutex);
+        g_host_mutex = nullptr;
+        return false;
+    }
+
+    return true;
+}
+
+void releaseHostElection() {
+    if (g_host_mutex != nullptr) {
+        CloseHandle(g_host_mutex);
+        g_host_mutex = nullptr;
+    }
+}
+#else
+bool acquireHostElection() { return true; }
+void releaseHostElection() {}
+#endif
+
+// Winsock (WSAStartup) must be initialized before any socket is used on Windows.
+// IXWebSocket does not do this automatically, so a client-only process (one that
+// never starts a WsServer) would otherwise fail every socket call. This guard
+// initializes networking for the whole process lifetime, independent of whether we
+// host. WSAStartup/WSACleanup are reference counted, so this coexists with the
+// server's own init/uninit.
+class NetSystemGuard {
+public:
+    NetSystemGuard() : initialized_(ix::initNetSystem()) {}
+    ~NetSystemGuard() {
+        if (initialized_) {
+            ix::uninitNetSystem();
+        }
+    }
+
+    NetSystemGuard(const NetSystemGuard&) = delete;
+    NetSystemGuard& operator=(const NetSystemGuard&) = delete;
+
+    bool ok() const { return initialized_; }
+
+private:
+    bool initialized_ = false;
+};
 
 constexpr int kFrameMs = 16;
 constexpr int kGameOverDisplayMs = 2500;
@@ -94,6 +166,29 @@ void applyGameEndedMessage(const std::string& json, engine::GameEngine& game_eng
     }
 }
 
+void processServerMessages(const std::vector<std::string>& messages,
+                           engine::GameEngine& game_engine,
+                           view::DisconnectOverlayState& disconnect_overlay, bool is_server_host) {
+    for (const std::string& json : messages) {
+        const network::ServerMessageType message_type = network::parseServerMessageType(json);
+        if (message_type == network::ServerMessageType::GameEnded) {
+            applyGameEndedMessage(json, game_engine);
+            disconnect_overlay.applyMessage(json);
+            continue;
+        }
+
+        if (message_type == network::ServerMessageType::PlayerDisconnected ||
+            message_type == network::ServerMessageType::PlayerReconnected) {
+            disconnect_overlay.applyMessage(json);
+            continue;
+        }
+
+        if (!is_server_host) {
+            network::ClientGameSync::applyMessage(json, game_engine);
+        }
+    }
+}
+
 void showGameOverFeedback(const engine::GameEngine& game_engine, model::Color player_color,
                           const char* window_name, view::Renderer& renderer,
                           input::Controller& controller,
@@ -128,30 +223,19 @@ void runGameLoop(engine::GameEngine& game_engine, input::Controller& controller,
     PlayerWindowContext context{&game_engine, &controller, player_color, true};
     cv::setMouseCallback(window_name, onPlayerMouse, &context);
 
-    client.setMessageHandler([&](const std::string& json) {
-        const network::ServerMessageType message_type = network::parseServerMessageType(json);
-        if (message_type == network::ServerMessageType::GameEnded) {
-            applyGameEndedMessage(json, game_engine);
-            disconnect_overlay.applyMessage(json);
-            return;
-        }
+    network::ClientMessageQueue message_queue;
+    client.setMessageHandler(
+        [&message_queue](const std::string& json) { message_queue.push(json); });
 
-        if (message_type == network::ServerMessageType::PlayerDisconnected ||
-            message_type == network::ServerMessageType::PlayerReconnected) {
-            disconnect_overlay.applyMessage(json);
-            return;
-        }
-
-        if (!is_server_host) {
-            network::ClientGameSync::applyMessage(json, game_engine);
-        }
-    });
-
+    std::vector<std::string> pending_messages;
     bool running = true;
     while (running && !game_engine.isGameOver()) {
         if (ws_server != nullptr) {
             ws_server->tick();
         }
+
+        message_queue.drain(pending_messages);
+        processServerMessages(pending_messages, game_engine, disconnect_overlay, is_server_host);
 
         if (is_server_host) {
             processNetworkCommands(command_queue, network_input);
@@ -167,6 +251,9 @@ void runGameLoop(engine::GameEngine& game_engine, input::Controller& controller,
         }
     }
 
+    message_queue.drain(pending_messages);
+    processServerMessages(pending_messages, game_engine, disconnect_overlay, is_server_host);
+
     showGameOverFeedback(game_engine, player_color, window_name, renderer, controller,
                          disconnect_overlay);
     cv::destroyWindow(window_name);
@@ -175,6 +262,12 @@ void runGameLoop(engine::GameEngine& game_engine, input::Controller& controller,
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    NetSystemGuard net_system;
+    if (!net_system.ok()) {
+        std::cerr << "Failed to initialize networking.\n";
+        return 1;
+    }
+
     bool force_client = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--client") {
@@ -221,12 +314,14 @@ int main(int argc, char* argv[]) {
     std::unique_ptr<network::WsServer> ws_server;
     bool is_server_host = false;
 
-    if (!force_client) {
+    if (!force_client && acquireHostElection()) {
         ws_server = std::make_unique<network::WsServer>(session, bus, store, command_queue,
                                                         NetworkConfig::kDefaultPort);
         is_server_host = ws_server->start();
         if (!is_server_host) {
             ws_server.reset();
+            // Server failed to start; give up host election so another instance can win.
+            releaseHostElection();
         }
     }
 
@@ -316,10 +411,29 @@ int main(int argc, char* argv[]) {
     input::Controller controller;
     network::NetworkInputHandler network_input(session, game_engine);
     controller.setDispatch(
-        [&client](const model::Position& from, const model::Position& to) {
-            return client.sendMove(from, to);
+        [&client, &game_engine, is_server_host](const model::Position& from,
+                                                 const model::Position& to) {
+            if (!client.sendMove(from, to)) {
+                return false;
+            }
+
+            if (!is_server_host) {
+                game_engine.requestMove(from, to);
+            }
+
+            return true;
         },
-        [&client](const model::Position& square) { return client.sendJump(square); });
+        [&client, &game_engine, is_server_host](const model::Position& square) {
+            if (!client.sendJump(square)) {
+                return false;
+            }
+
+            if (!is_server_host) {
+                game_engine.requestJump(square);
+            }
+
+            return true;
+        });
 
     view::Renderer renderer;
     view::DisconnectOverlayState disconnect_overlay;

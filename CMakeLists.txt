@@ -77,6 +77,8 @@ set(KONG_FU_CHESS_SOURCES
     src/session/shell_login.cpp
     src/network/ws_protocol.cpp
     src/network/command_queue.cpp
+    src/network/client_message_queue.cpp
+    src/network/client_game_sync.cpp
     src/network/network_input.cpp
     src/db/user_store.cpp
     src/elo/elo_rating.cpp
@@ -88,7 +90,6 @@ add_executable(kong_fu_chess
     src/main.cpp
     ${KONG_FU_CHESS_SOURCES}
     src/session/shell_lobby.cpp
-    src/network/client_game_sync.cpp
     src/network/ws_server.cpp
     src/network/local_ws_client.cpp
     src/view/img.cpp

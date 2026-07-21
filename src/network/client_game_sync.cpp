@@ -1,7 +1,7 @@
 #include "client_game_sync.h"
 
-#include "../constants.h"
 #include "../engine/game_engine.h"
+#include "../model/board.h"
 #include "ws_protocol.h"
 
 namespace network {
@@ -9,26 +9,59 @@ namespace network {
 namespace {
 
 constexpr int kSyncFrameMs = 16;
+constexpr int kMaxSyncAdvanceMs = 12000;
 
-void fastForwardMove(engine::GameEngine& game_engine, const model::Position& from,
-                     const model::Position& to) {
+bool pieceAt(const model::Board& board, const model::Position& square, model::PieceType type,
+             model::Color color) {
+    if (!board.inBounds(square)) {
+        return false;
+    }
+
+    const model::Piece& piece = board.cell(square);
+    return !piece.isEmpty() && piece.type() == type && piece.color() == color;
+}
+
+void advanceUntilIdle(engine::GameEngine& game_engine) {
+    int advanced_ms = 0;
+    while (!game_engine.activeMotions().empty() && advanced_ms < kMaxSyncAdvanceMs) {
+        game_engine.advanceTime(kSyncFrameMs);
+        advanced_ms += kSyncFrameMs;
+    }
+}
+
+void syncCompletedMove(engine::GameEngine& game_engine, const model::Position& from,
+                       const model::Position& to, model::PieceType piece_type,
+                       model::Color piece_color) {
+    if (pieceAt(game_engine.board(), to, piece_type, piece_color) &&
+        !game_engine.isBusyAt(from)) {
+        return;
+    }
+
+    if (game_engine.isBusyAt(from) || game_engine.isBusyAt(to)) {
+        advanceUntilIdle(game_engine);
+        if (pieceAt(game_engine.board(), to, piece_type, piece_color)) {
+            return;
+        }
+    }
+
     if (!game_engine.requestMove(from, to)) {
         return;
     }
 
-    for (int i = 0; i < 32; ++i) {
-        game_engine.advanceTime(kSyncFrameMs);
-    }
+    advanceUntilIdle(game_engine);
 }
 
-void fastForwardJump(engine::GameEngine& game_engine, const model::Position& square) {
-    if (!game_engine.requestJump(square)) {
+void syncJumpCapture(engine::GameEngine& game_engine, const model::Position& jump_square) {
+    if (game_engine.isBusyAt(jump_square)) {
+        advanceUntilIdle(game_engine);
         return;
     }
 
-    for (int i = 0; i < 160; ++i) {
-        game_engine.advanceTime(kSyncFrameMs);
+    if (!game_engine.requestJump(jump_square)) {
+        return;
     }
+
+    advanceUntilIdle(game_engine);
 }
 
 }  // namespace
@@ -40,12 +73,12 @@ bool ClientGameSync::applyMessage(const std::string& json, engine::GameEngine& g
     }
 
     if (const auto* move = std::get_if<realtime::CompletedMoveEvent>(&*event)) {
-        fastForwardMove(game_engine, move->from, move->to);
+        syncCompletedMove(game_engine, move->from, move->to, move->piece_type, move->piece_color);
         return true;
     }
 
     if (const auto* jump = std::get_if<realtime::JumpCaptureEvent>(&*event)) {
-        fastForwardJump(game_engine, jump->jump_square);
+        syncJumpCapture(game_engine, jump->jump_square);
         return true;
     }
 

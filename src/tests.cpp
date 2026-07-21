@@ -24,6 +24,8 @@
 #include "matchmaking/matchmaking_queue.h"
 #include "network/ws_protocol.h"
 #include "network/command_queue.h"
+#include "network/client_game_sync.h"
+#include "network/client_message_queue.h"
 #include "network/network_input.h"
 #include "input/board_mapper.h"
 #include "input/controller.h"
@@ -2151,4 +2153,65 @@ TEST_CASE("move log: simultaneous arrival tie produces no log entry or score") {
     CHECK(engine.moveLog().entries().empty());
     CHECK(engine.moveLog().whiteScore() == 0);
     CHECK(engine.moveLog().blackScore() == 0);
+}
+
+TEST_CASE("client message queue: drains pushed messages in order") {
+    network::ClientMessageQueue queue;
+    queue.push(R"({"type":"move_completed"})");
+    queue.push(R"({"type":"jump_capture"})");
+
+    std::vector<std::string> drained;
+    queue.drain(drained);
+    REQUIRE(drained.size() == 2);
+    CHECK(drained[0].find("move_completed") != std::string::npos);
+    CHECK(drained[1].find("jump_capture") != std::string::npos);
+
+    queue.drain(drained);
+    CHECK(drained.empty());
+}
+
+TEST_CASE("client game sync: applies completed move events to engine") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    copyBoardIntoEngine(engine, board);
+
+    realtime::CompletedMoveEvent move;
+    move.timestamp_ms = 1000;
+    move.piece_type = PieceType::Rook;
+    move.piece_color = Color::White;
+    move.from = pos(0, 0);
+    move.to = pos(0, 2);
+
+    const std::string move_json = network::serializeServerEvent(move);
+    CHECK(network::ClientGameSync::applyMessage(move_json, engine));
+
+    for (int i = 0; i < 80 && !engine.activeMotions().empty(); ++i) {
+        engine.advanceTime(16);
+    }
+
+    CHECK(engine.board().cell(pos(0, 2)).type() == PieceType::Rook);
+    CHECK(engine.board().cell(pos(0, 2)).color() == Color::White);
+    CHECK(engine.board().cell(pos(0, 0)).isEmpty());
+}
+
+TEST_CASE("client game sync: completes optimistic in-flight moves on server echo") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    copyBoardIntoEngine(engine, board);
+
+    REQUIRE(engine.requestMove(pos(0, 0), pos(0, 2)));
+    CHECK_FALSE(engine.activeMotions().empty());
+
+    realtime::CompletedMoveEvent move;
+    move.timestamp_ms = 1000;
+    move.piece_type = PieceType::Rook;
+    move.piece_color = Color::White;
+    move.from = pos(0, 0);
+    move.to = pos(0, 2);
+
+    const std::string move_json = network::serializeServerEvent(move);
+    CHECK(network::ClientGameSync::applyMessage(move_json, engine));
+
+    CHECK(engine.board().cell(pos(0, 2)).type() == PieceType::Rook);
+    CHECK(engine.board().cell(pos(0, 0)).isEmpty());
 }
