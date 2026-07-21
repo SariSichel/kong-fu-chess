@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -44,7 +45,8 @@ class ShellLobby {
 public:
     ShellLobby(std::string username, int elo);
 
-    std::optional<MatchInfo> run(network::LocalWsClient& client);
+    std::optional<MatchInfo> run(network::LocalWsClient& client,
+                                   const std::function<void()>& on_frame = {});
 
     void handleServerMessage(const std::string& json);
     void handleMouseClick(int x, int y, network::LocalWsClient& client);

@@ -13,6 +13,7 @@
 #include "../model/piece.h"
 #include "../model/position.h"
 #include "../realtime/motion.h"
+#include "disconnect_overlay.h"
 #include "piece_sprite.h"
 #include "render_helpers.h"
 
@@ -77,7 +78,8 @@ void Renderer::init(const std::string& boardImagePath) {
 }
 
 void Renderer::drawFrame(const engine::GameEngine& gameEngine,
-                         const input::Controller& controller, const char* window_name) {
+                         const input::Controller& controller, const char* window_name,
+                         const DisconnectOverlayState* overlay) {
     if (board_canvas_.empty()) {
         throw std::runtime_error("Renderer not initialized; call init() first.");
     }
@@ -87,6 +89,9 @@ void Renderer::drawFrame(const engine::GameEngine& gameEngine,
     drawScene(canvas, gameEngine);
     drawSelectionOverlay(canvas, controller);
     drawHud(canvas, board_canvas_.cols, gameEngine);
+    if (overlay != nullptr) {
+        render::drawDisconnectOverlay(canvas, *overlay);
+    }
     cv::imshow(window_name, canvas);
 }
 

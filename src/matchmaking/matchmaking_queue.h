@@ -23,16 +23,18 @@ struct MatchResult {
 
 class MatchmakingQueue {
 public:
-    explicit MatchmakingQueue(int elo_match_range = 100);
+    MatchmakingQueue(int elo_match_range = 100, int queue_timeout_ms = 60000);
 
     std::optional<MatchResult> enqueue(QueueEntry entry);
     bool remove(std::uint64_t connection_id);
     bool contains(std::uint64_t connection_id) const;
+    std::vector<QueueEntry> tick(std::chrono::steady_clock::time_point now);
 
 private:
     bool isEligible(const QueueEntry& a, const QueueEntry& b) const;
 
     int elo_match_range_;
+    int queue_timeout_ms_;
     mutable std::mutex mutex_;
     std::vector<QueueEntry> queue_;
 };

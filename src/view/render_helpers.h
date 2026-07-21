@@ -8,6 +8,10 @@ namespace engine {
 class MoveLog;
 }  // namespace engine
 
+namespace view {
+struct DisconnectOverlayState;
+}  // namespace view
+
 namespace view::render {
 
 constexpr int kMinVisibleAlpha = 16;
@@ -45,5 +49,7 @@ void drawTextLine(cv::Mat& canvas,
                   int thickness = 1);
 
 void drawHudPanel(cv::Mat& canvas, int boardWidth, const engine::MoveLog& moveLog);
+
+void drawDisconnectOverlay(cv::Mat& canvas, const view::DisconnectOverlayState& overlay);
 
 }  // namespace view::render

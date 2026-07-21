@@ -16,11 +16,14 @@
 
 #include "../constants.h"
 #include "../db/user_store.h"
+#include "../session/disconnect_manager.h"
 #include "ws_protocol.h"
 
 namespace network {
 
 namespace {
+
+constexpr const char* kQueueTimeoutMessage = "No opponent found within 60 seconds.";
 
 std::optional<std::uint64_t> parseConnectionId(const ix::ConnectionState& connection_state) {
     try {
@@ -51,7 +54,9 @@ struct WsServer::Impl {
     events::EventBus& bus;
     db::UserStore& user_store;
     CommandQueue& command_queue;
-    matchmaking::MatchmakingQueue matchmaking_queue{MatchmakingConfig::kEloMatchRange};
+    matchmaking::MatchmakingQueue matchmaking_queue{MatchmakingConfig::kEloMatchRange,
+                                                    MatchmakingConfig::kQueueTimeoutMs};
+    session::DisconnectManager disconnect_manager{DisconnectConfig::kGraceMs};
     const int port;
 
     std::unique_ptr<ix::WebSocketServer> server;
@@ -89,6 +94,28 @@ struct WsServer::Impl {
 
     void handleLogin(std::uint64_t connection_id, ix::WebSocket& web_socket,
                      const LoginCommand& login) {
+        if (disconnect_manager.isInGrace(login.username)) {
+            const session::AuthResult reconnect_result =
+                session.reconnect(connection_id, login.username);
+            if (reconnect_result != session::AuthResult::Accepted) {
+                web_socket.sendText(serializeErrorMessage(authErrorMessage(reconnect_result)));
+                return;
+            }
+
+            disconnect_manager.onReconnect(login.username);
+            broadcast(serializePlayerReconnected(login.username));
+
+            const std::optional<model::Color> color = session.colorFor(connection_id);
+            if (!color.has_value()) {
+                web_socket.sendText(serializeErrorMessage("Reconnect failed"));
+                return;
+            }
+
+            web_socket.sendText(serializeLoginOk(colorLabel(*color)));
+            web_socket.sendText(serializeServerEvent(session.rosterSnapshot()));
+            return;
+        }
+
         const session::AuthResult result = session.authenticate(connection_id, login.username);
         if (result != session::AuthResult::Accepted) {
             web_socket.sendText(serializeErrorMessage(authErrorMessage(result)));
@@ -121,9 +148,11 @@ struct WsServer::Impl {
             return;
         }
 
-        if (session.phase() == session::SessionPhase::InGame && session.isReady()) {
-            web_socket.sendText(serializeErrorMessage("Already in game"));
-            return;
+        if (session.phase() == session::SessionPhase::InGame) {
+            if (session.colorFor(connection_id).has_value() || session.isReady()) {
+                web_socket.sendText(serializeErrorMessage("Already in game"));
+                return;
+            }
         }
 
         const std::string username = *session.usernameFor(connection_id);
@@ -156,6 +185,37 @@ struct WsServer::Impl {
 
     void removeFromQueue(std::uint64_t connection_id) { matchmaking_queue.remove(connection_id); }
 
+    void handleDisconnect(std::uint64_t connection_id) {
+        if (session.phase() == session::SessionPhase::InGame) {
+            const std::optional<std::string> username = session.usernameFor(connection_id);
+            const std::optional<model::Color> color = session.colorFor(connection_id);
+            if (username.has_value() && color.has_value()) {
+                const auto now = std::chrono::steady_clock::now();
+                session::DisconnectGraceEntry entry;
+                entry.username = *username;
+                entry.color = *color;
+                entry.connection_id = connection_id;
+                entry.disconnected_at = now;
+                entry.grace_until = now + std::chrono::milliseconds(DisconnectConfig::kGraceMs);
+
+                disconnect_manager.onDisconnect(entry);
+                session.reserveDisconnectedSlot(connection_id, *username, *color);
+                broadcast(serializePlayerDisconnected(*username, colorLabel(*color),
+                                                      DisconnectConfig::kGraceSeconds));
+
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                clients.erase(connection_id);
+                return;
+            }
+        }
+
+        removeFromQueue(connection_id);
+        session.disconnect(connection_id);
+
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        clients.erase(connection_id);
+    }
+
     void handleClientMessage(const std::shared_ptr<ix::ConnectionState>& connection_state,
                              ix::WebSocket& web_socket, const ix::WebSocketMessagePtr& message) {
         const std::optional<std::uint64_t> connection_id = parseConnectionId(*connection_state);
@@ -170,10 +230,7 @@ struct WsServer::Impl {
         }
 
         if (message->type == ix::WebSocketMessageType::Close) {
-            removeFromQueue(*connection_id);
-            session.disconnect(*connection_id);
-            std::lock_guard<std::mutex> lock(clients_mutex);
-            clients.erase(*connection_id);
+            handleDisconnect(*connection_id);
             return;
         }
 
@@ -208,6 +265,21 @@ struct WsServer::Impl {
         }
 
         command_queue.push({*connection_id, *command});
+    }
+
+    void tickQueuesAndGrace() {
+        const auto now = std::chrono::steady_clock::now();
+
+        const std::vector<matchmaking::QueueEntry> expired = matchmaking_queue.tick(now);
+        for (const matchmaking::QueueEntry& entry : expired) {
+            sendToConnection(entry.connection_id, serializeQueueTimeout(kQueueTimeoutMessage));
+        }
+
+        const std::optional<model::Color> winner = disconnect_manager.tick(now);
+        if (winner.has_value()) {
+            bus.publish(events::GameEnded{*winner});
+            session.resetToLobby();
+        }
     }
 };
 
@@ -281,6 +353,14 @@ void WsServer::stop() {
     }
 
     impl_->running = false;
+}
+
+void WsServer::tick() {
+    if (!impl_->running) {
+        return;
+    }
+
+    impl_->tickQueuesAndGrace();
 }
 
 int WsServer::port() const { return impl_->port; }

@@ -49,6 +49,23 @@ enum class ServerMessageType {
     MoveCompleted,
     JumpCapture,
     GameEnded,
+    QueueTimeout,
+    PlayerDisconnected,
+    PlayerReconnected,
+};
+
+struct QueueTimeoutMessage {
+    std::string message;
+};
+
+struct PlayerDisconnectedMessage {
+    std::string username;
+    model::Color color = model::Color::White;
+    int grace_seconds = 0;
+};
+
+struct PlayerReconnectedMessage {
+    std::string username;
 };
 
 struct MatchFoundMessage {
@@ -71,6 +88,10 @@ std::optional<ClientCommand> parseClientMessage(const std::string& json);
 ServerMessageType parseServerMessageType(const std::string& json);
 std::optional<MatchFoundMessage> parseMatchFoundMessage(const std::string& json);
 std::optional<GameStartedMessage> parseGameStartedMessage(const std::string& json);
+std::optional<model::Color> parseLoginOkColor(const std::string& json);
+std::optional<QueueTimeoutMessage> parseQueueTimeoutMessage(const std::string& json);
+std::optional<PlayerDisconnectedMessage> parsePlayerDisconnectedMessage(const std::string& json);
+std::optional<PlayerReconnectedMessage> parsePlayerReconnectedMessage(const std::string& json);
 std::optional<events::GameEvent> parseServerGameEvent(const std::string& json);
 
 std::string serializeLoginCommand(const std::string& username);
@@ -84,6 +105,10 @@ std::string serializeLoginOk(const std::string& color);
 std::string serializeQueueJoined();
 std::string serializeQueueLeft();
 std::string serializeMatchFound(const std::string& color, const std::string& opponent, int port);
+std::string serializeQueueTimeout(const std::string& message);
+std::string serializePlayerDisconnected(const std::string& username, const std::string& color,
+                                        int grace_seconds);
+std::string serializePlayerReconnected(const std::string& username);
 
 model::Color colorFromLabel(const std::string& label);
 std::string colorLabel(model::Color color);

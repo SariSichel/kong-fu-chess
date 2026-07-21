@@ -30,6 +30,11 @@ AuthResult SessionManager::authenticateLobby(std::uint64_t connection_id,
         return AuthResult::UnknownUser;
     }
 
+    const auto reserved_it = reserved_colors_.find(username);
+    if (reserved_it != reserved_colors_.end()) {
+        return AuthResult::Accepted;
+    }
+
     const auto existing_username = connection_usernames_.find(connection_id);
     if (existing_username != connection_usernames_.end()) {
         if (existing_username->second == username) {
@@ -93,6 +98,7 @@ void SessionManager::beginMatch(const matchmaking::MatchResult& match) {
     black_username_ = match.black.username;
     phase_ = SessionPhase::InGame;
     fixed_roster_ = true;
+    reserved_colors_.clear();
 
     connection_colors_[match.white.connection_id] = model::Color::White;
     connection_colors_[match.black.connection_id] = model::Color::Black;
@@ -114,6 +120,57 @@ void SessionManager::disconnect(std::uint64_t connection_id) {
     connection_colors_.erase(connection_id);
 }
 
+void SessionManager::reserveDisconnectedSlot(std::uint64_t connection_id,
+                                             const std::string& username, model::Color color) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    reserved_colors_[username] = color;
+
+    const auto username_it = connection_usernames_.find(connection_id);
+    if (username_it != connection_usernames_.end()) {
+        username_connections_.erase(username_it->second);
+        connection_usernames_.erase(username_it);
+    }
+
+    connection_colors_.erase(connection_id);
+}
+
+AuthResult SessionManager::reconnect(std::uint64_t connection_id, const std::string& username) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const auto reserved_it = reserved_colors_.find(username);
+    if (reserved_it == reserved_colors_.end()) {
+        return AuthResult::UnknownUser;
+    }
+
+    const auto existing_username = username_connections_.find(username);
+    if (existing_username != username_connections_.end() &&
+        existing_username->second != connection_id) {
+        connection_usernames_.erase(existing_username->second);
+        connection_colors_.erase(existing_username->second);
+    }
+
+    connection_colors_[connection_id] = reserved_it->second;
+    connection_usernames_[connection_id] = username;
+    username_connections_[username] = connection_id;
+    reserved_colors_.erase(reserved_it);
+
+    return AuthResult::Accepted;
+}
+
+void SessionManager::resetToLobby() {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    phase_ = SessionPhase::Lobby;
+    fixed_roster_ = false;
+    white_username_.clear();
+    black_username_.clear();
+    connection_colors_.clear();
+    connection_usernames_.clear();
+    username_connections_.clear();
+    reserved_colors_.clear();
+}
+
 std::optional<model::Color> SessionManager::colorFor(std::uint64_t connection_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -127,6 +184,12 @@ std::optional<model::Color> SessionManager::colorFor(std::uint64_t connection_id
 std::optional<model::Color> SessionManager::colorForUsername(
     const std::string& username) const {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    const auto reserved_it = reserved_colors_.find(username);
+    if (reserved_it != reserved_colors_.end()) {
+        return reserved_it->second;
+    }
+
     return expectedColorForUsername(username);
 }
 

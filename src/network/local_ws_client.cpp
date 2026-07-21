@@ -23,6 +23,11 @@ LocalWsClient::LocalWsClient(std::string url, std::string username)
 
 LocalWsClient::~LocalWsClient() { disconnect(); }
 
+std::optional<model::Color> LocalWsClient::assignedColor() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return assigned_color_;
+}
+
 void LocalWsClient::setMessageHandler(MessageHandler handler) {
     std::lock_guard<std::mutex> lock(handler_mutex_);
     message_handler_ = std::move(handler);
@@ -34,6 +39,10 @@ bool LocalWsClient::connectAndLogin(int timeout_ms) {
     }
 
     logged_in_.store(false);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        assigned_color_.reset();
+    }
 
     impl_->web_socket.setUrl(url_);
     impl_->web_socket.disableAutomaticReconnection();
@@ -50,6 +59,11 @@ bool LocalWsClient::connectAndLogin(int timeout_ms) {
 
         if (parseServerMessageType(message->str) == ServerMessageType::LoginOk) {
             logged_in_.store(true);
+            if (const std::optional<model::Color> color = parseLoginOkColor(message->str);
+                color.has_value()) {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                assigned_color_ = color;
+            }
         }
 
         MessageHandler handler;
@@ -79,6 +93,10 @@ bool LocalWsClient::connectAndLogin(int timeout_ms) {
 
 void LocalWsClient::disconnect() {
     logged_in_.store(false);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        assigned_color_.reset();
+    }
     impl_->web_socket.stop();
 }
 

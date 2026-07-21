@@ -265,6 +265,15 @@ ServerMessageType parseServerMessageType(const std::string& json) {
     if (*type == "game_ended") {
         return ServerMessageType::GameEnded;
     }
+    if (*type == "queue_timeout") {
+        return ServerMessageType::QueueTimeout;
+    }
+    if (*type == "player_disconnected") {
+        return ServerMessageType::PlayerDisconnected;
+    }
+    if (*type == "player_reconnected") {
+        return ServerMessageType::PlayerReconnected;
+    }
 
     return ServerMessageType::Unknown;
 }
@@ -292,6 +301,19 @@ std::optional<MatchFoundMessage> parseMatchFoundMessage(const std::string& json)
     return MatchFoundMessage{colorFromLabel(*color), *opponent, *port};
 }
 
+std::optional<model::Color> parseLoginOkColor(const std::string& json) {
+    if (parseServerMessageType(json) != ServerMessageType::LoginOk) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string> color = extractJsonString(json, "color");
+    if (!color.has_value() || *color == "none") {
+        return std::nullopt;
+    }
+
+    return colorFromLabel(*color);
+}
+
 std::optional<GameStartedMessage> parseGameStartedMessage(const std::string& json) {
     if (parseServerMessageType(json) != ServerMessageType::GameStarted) {
         return std::nullopt;
@@ -305,6 +327,47 @@ std::optional<GameStartedMessage> parseGameStartedMessage(const std::string& jso
     }
 
     return GameStartedMessage{*white, *black, *port};
+}
+
+std::optional<QueueTimeoutMessage> parseQueueTimeoutMessage(const std::string& json) {
+    if (parseServerMessageType(json) != ServerMessageType::QueueTimeout) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string> message = extractJsonString(json, "message");
+    if (!message.has_value()) {
+        return std::nullopt;
+    }
+
+    return QueueTimeoutMessage{*message};
+}
+
+std::optional<PlayerDisconnectedMessage> parsePlayerDisconnectedMessage(const std::string& json) {
+    if (parseServerMessageType(json) != ServerMessageType::PlayerDisconnected) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string> username = extractJsonString(json, "username");
+    const std::optional<std::string> color = extractJsonString(json, "color");
+    const std::optional<int> grace_seconds = extractJsonInt(json, "grace_seconds");
+    if (!username.has_value() || !color.has_value() || !grace_seconds.has_value()) {
+        return std::nullopt;
+    }
+
+    return PlayerDisconnectedMessage{*username, colorFromLabel(*color), *grace_seconds};
+}
+
+std::optional<PlayerReconnectedMessage> parsePlayerReconnectedMessage(const std::string& json) {
+    if (parseServerMessageType(json) != ServerMessageType::PlayerReconnected) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string> username = extractJsonString(json, "username");
+    if (!username.has_value()) {
+        return std::nullopt;
+    }
+
+    return PlayerReconnectedMessage{*username};
 }
 
 std::optional<events::GameEvent> parseServerGameEvent(const std::string& json) {
@@ -445,6 +508,23 @@ std::string serializeMatchFound(const std::string& color, const std::string& opp
         << ",\"color\":" << quoteJsonString(color) << ",\"opponent\":"
         << quoteJsonString(opponent) << ",\"port\":" << port << '}';
     return out.str();
+}
+
+std::string serializeQueueTimeout(const std::string& message) {
+    return "{\"type\":\"queue_timeout\",\"message\":" + quoteJsonString(message) + '}';
+}
+
+std::string serializePlayerDisconnected(const std::string& username, const std::string& color,
+                                        int grace_seconds) {
+    std::ostringstream out;
+    out << "{\"type\":\"player_disconnected\""
+        << ",\"username\":" << quoteJsonString(username) << ",\"color\":"
+        << quoteJsonString(color) << ",\"grace_seconds\":" << grace_seconds << '}';
+    return out.str();
+}
+
+std::string serializePlayerReconnected(const std::string& username) {
+    return "{\"type\":\"player_reconnected\",\"username\":" + quoteJsonString(username) + '}';
 }
 
 }  // namespace network

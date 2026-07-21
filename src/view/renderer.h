@@ -25,6 +25,8 @@ struct Motion;
 
 namespace view {
 
+struct DisconnectOverlayState;
+
 class Renderer {
 public:
     static constexpr const char* kWhiteWindowName = "Kong Fu Chess - White";
@@ -32,7 +34,8 @@ public:
 
     void init(const std::string& boardImagePath);
     void drawFrame(const engine::GameEngine& gameEngine, const input::Controller& controller,
-                   const char* window_name);
+                   const char* window_name,
+                   const DisconnectOverlayState* overlay = nullptr);
 
     void render(const engine::GameEngine& gameEngine, const input::Controller& controller,
                 const std::string& boardImagePath);

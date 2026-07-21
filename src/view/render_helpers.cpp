@@ -1,6 +1,7 @@
 #include "render_helpers.h"
 
 #include "../constants.h"
+#include "disconnect_overlay.h"
 #include "../engine/move_log.h"
 
 #include <algorithm>
@@ -208,6 +209,41 @@ void drawTextLine(cv::Mat& canvas,
                   int thickness) {
     cv::putText(canvas, text, cv::Point(x, y), cv::FONT_HERSHEY_SIMPLEX, fontScale, color,
                 thickness, cv::LINE_AA);
+}
+
+void drawDisconnectOverlay(cv::Mat& canvas, const view::DisconnectOverlayState& overlay) {
+    if (!overlay.active) {
+        return;
+    }
+
+    const int boardWidth = GameConfig::kBoardOriginX * 2 + GameConfig::kClickCellSize * 8;
+    const int boardHeight = GameConfig::kBoardOriginY * 2 + GameConfig::kClickCellSize * 8;
+    const cv::Rect boardRect(0, 0, boardWidth, boardHeight);
+
+    cv::Mat overlayLayer = canvas(boardRect);
+    overlayLayer = overlayLayer * 0.45 + cv::Scalar(20, 20, 30) * 0.55;
+
+    const std::string line1 = "Opponent disconnected";
+    const std::string line2 =
+        "Reconnecting in " + std::to_string(overlay.seconds_remaining) + "s";
+
+    const double titleScale = 0.9;
+    const double bodyScale = 0.7;
+    const cv::Scalar textColor(240, 240, 240);
+
+    int baseline = 0;
+    const cv::Size titleSize =
+        cv::getTextSize(line1, cv::FONT_HERSHEY_SIMPLEX, titleScale, 2, &baseline);
+    const cv::Size bodySize =
+        cv::getTextSize(line2, cv::FONT_HERSHEY_SIMPLEX, bodyScale, 2, &baseline);
+
+    const int centerX = boardWidth / 2;
+    const int centerY = boardHeight / 2;
+    const cv::Point titleOrigin(centerX - titleSize.width / 2, centerY - 8);
+    const cv::Point bodyOrigin(centerX - bodySize.width / 2, centerY + titleSize.height + 8);
+
+    drawTextLine(canvas, line1, titleOrigin.x, titleOrigin.y, titleScale, textColor, 2);
+    drawTextLine(canvas, line2, bodyOrigin.x, bodyOrigin.y, bodyScale, textColor, 2);
 }
 
 void drawHudPanel(cv::Mat& canvas, int boardWidth, const engine::MoveLog& moveLog) {

@@ -36,6 +36,10 @@ public:
     AuthResult authenticate(std::uint64_t connection_id, const std::string& username);
     void beginMatch(const matchmaking::MatchResult& match);
     void disconnect(std::uint64_t connection_id);
+    void reserveDisconnectedSlot(std::uint64_t connection_id, const std::string& username,
+                                 model::Color color);
+    AuthResult reconnect(std::uint64_t connection_id, const std::string& username);
+    void resetToLobby();
 
     std::optional<model::Color> colorFor(std::uint64_t connection_id) const;
     std::optional<model::Color> colorForUsername(const std::string& username) const;
@@ -61,6 +65,7 @@ private:
     std::unordered_map<std::uint64_t, model::Color> connection_colors_;
     std::unordered_map<std::uint64_t, std::string> connection_usernames_;
     std::unordered_map<std::string, std::uint64_t> username_connections_;
+    std::unordered_map<std::string, model::Color> reserved_colors_;
 };
 
 }  // namespace session

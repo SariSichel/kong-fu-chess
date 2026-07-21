@@ -1,6 +1,3 @@
-//git link:
-//https://github.com/SariSichel/kong-fu-chess/tree/main
-
 #include "db/user_store.h"
 #include "elo/elo_rating.h"
 #include "engine/game_engine.h"
@@ -16,11 +13,13 @@
 #include "session/session_manager.h"
 #include "session/shell_login.h"
 #include "session/shell_lobby.h"
+#include "view/disconnect_overlay.h"
 #include "view/renderer.h"
 
 #include "constants.h"
 #include <opencv2/highgui.hpp>
 
+#include <chrono>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -31,6 +30,7 @@
 namespace {
 
 constexpr int kFrameMs = 16;
+constexpr int kGameOverDisplayMs = 2500;
 
 struct PlayerWindowContext {
     engine::GameEngine* game_engine = nullptr;
@@ -81,10 +81,44 @@ const char* windowNameForColor(model::Color color) {
                                         : view::Renderer::kBlackWindowName;
 }
 
+void applyGameEndedMessage(const std::string& json, engine::GameEngine& game_engine) {
+    const std::optional<events::GameEvent> event = network::parseServerGameEvent(json);
+    if (!event.has_value()) {
+        return;
+    }
+
+    if (const auto* ended = std::get_if<events::GameEnded>(&*event)) {
+        if (!game_engine.isGameOver()) {
+            game_engine.applyRemoteGameEnded(ended->winner);
+        }
+    }
+}
+
+void showGameOverFeedback(const engine::GameEngine& game_engine, model::Color player_color,
+                          const char* window_name, view::Renderer& renderer,
+                          input::Controller& controller,
+                          view::DisconnectOverlayState& disconnect_overlay) {
+    if (!game_engine.isGameOver() || !game_engine.winner().has_value()) {
+        return;
+    }
+
+    const bool player_won = *game_engine.winner() == player_color;
+    std::cout << (player_won ? "You win!" : "You lose.") << '\n';
+    std::cout.flush();
+
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(kGameOverDisplayMs);
+    while (std::chrono::steady_clock::now() < deadline) {
+        renderer.drawFrame(game_engine, controller, window_name, &disconnect_overlay);
+        cv::waitKey(kFrameMs);
+    }
+}
+
 void runGameLoop(engine::GameEngine& game_engine, input::Controller& controller,
                  view::Renderer& renderer, network::CommandQueue& command_queue,
-                 network::NetworkInputHandler& network_input, model::Color player_color,
-                 bool is_server_host) {
+                 network::NetworkInputHandler& network_input, network::LocalWsClient& client,
+                 view::DisconnectOverlayState& disconnect_overlay, model::Color player_color,
+                 bool is_server_host, network::WsServer* ws_server) {
     renderer.init(AssetPaths::kBoardImage);
 
     const char* window_name = windowNameForColor(player_color);
@@ -94,14 +128,38 @@ void runGameLoop(engine::GameEngine& game_engine, input::Controller& controller,
     PlayerWindowContext context{&game_engine, &controller, player_color, true};
     cv::setMouseCallback(window_name, onPlayerMouse, &context);
 
+    client.setMessageHandler([&](const std::string& json) {
+        const network::ServerMessageType message_type = network::parseServerMessageType(json);
+        if (message_type == network::ServerMessageType::GameEnded) {
+            applyGameEndedMessage(json, game_engine);
+            disconnect_overlay.applyMessage(json);
+            return;
+        }
+
+        if (message_type == network::ServerMessageType::PlayerDisconnected ||
+            message_type == network::ServerMessageType::PlayerReconnected) {
+            disconnect_overlay.applyMessage(json);
+            return;
+        }
+
+        if (!is_server_host) {
+            network::ClientGameSync::applyMessage(json, game_engine);
+        }
+    });
+
     bool running = true;
     while (running && !game_engine.isGameOver()) {
+        if (ws_server != nullptr) {
+            ws_server->tick();
+        }
+
         if (is_server_host) {
             processNetworkCommands(command_queue, network_input);
         }
 
+        disconnect_overlay.updateCountdown(std::chrono::steady_clock::now());
         game_engine.advanceTime(kFrameMs);
-        renderer.drawFrame(game_engine, controller, window_name);
+        renderer.drawFrame(game_engine, controller, window_name, &disconnect_overlay);
 
         const int key = cv::waitKey(kFrameMs);
         if (key == 27) {
@@ -109,6 +167,8 @@ void runGameLoop(engine::GameEngine& game_engine, input::Controller& controller,
         }
     }
 
+    showGameOverFeedback(game_engine, player_color, window_name, renderer, controller,
+                         disconnect_overlay);
     cv::destroyWindow(window_name);
 }
 
@@ -186,17 +246,30 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    const bool reconnecting_to_game = client.assignedColor().has_value();
+
     std::cout << "Connected to ws://127.0.0.1:" << server_port << '\n';
     if (is_server_host) {
         std::cout << "Hosting matchmaking server.\n";
     } else {
         std::cout << "Running in client-only mode.\n";
     }
-    std::cout << "Lobby open for " << credentials.username << " (ELO " << user_record->elo
-              << "). Click Play to find a match. Press Esc to quit.\n";
+    if (reconnecting_to_game) {
+        std::cout << "Reconnecting to active game as "
+                  << (*client.assignedColor() == model::Color::White ? "White" : "Black")
+                  << "...\n";
+    } else {
+        std::cout << "Lobby open for " << credentials.username << " (ELO " << user_record->elo
+                  << "). Click Play to find a match. Press Esc to quit.\n";
+    }
     std::cout.flush();
 
-    const std::optional<session::MatchInfo> match = lobby.run(client);
+    const std::optional<session::MatchInfo> match = lobby.run(
+        client, [&ws_server]() {
+            if (ws_server) {
+                ws_server->tick();
+            }
+        });
     if (!match.has_value()) {
         client.disconnect();
         if (ws_server) {
@@ -205,10 +278,19 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    bus.subscribe([&store, match](const events::GameEvent& event) {
+    engine::GameEngine game_engine;
+    game_engine.setEventBus(is_server_host ? &bus : nullptr);
+    io::setupStandardBoard(game_engine.board());
+    game_engine.reset();
+
+    bus.subscribe([&store, &game_engine, match](const events::GameEvent& event) {
         const auto* ended = std::get_if<events::GameEnded>(&event);
         if (ended == nullptr) {
             return;
+        }
+
+        if (!game_engine.isGameOver()) {
+            game_engine.applyRemoteGameEnded(ended->winner);
         }
 
         const bool white_won = ended->winner == model::Color::White;
@@ -231,11 +313,6 @@ int main(int argc, char* argv[]) {
                   << update.winner_new << ", " << loser_name << ": " << update.loser_new << '\n';
     });
 
-    engine::GameEngine game_engine;
-    game_engine.setEventBus(is_server_host ? &bus : nullptr);
-    io::setupStandardBoard(game_engine.board());
-    game_engine.reset();
-
     input::Controller controller;
     network::NetworkInputHandler network_input(session, game_engine);
     controller.setDispatch(
@@ -244,23 +321,16 @@ int main(int argc, char* argv[]) {
         },
         [&client](const model::Position& square) { return client.sendJump(square); });
 
-    if (!is_server_host) {
-        client.setMessageHandler([&game_engine](const std::string& json) {
-            network::ClientGameSync::applyMessage(json, game_engine);
-        });
-    } else {
-        client.setMessageHandler([](const std::string& /*json*/) {});
-    }
-
     view::Renderer renderer;
+    view::DisconnectOverlayState disconnect_overlay;
 
     std::cout << "Match found! You are "
               << (match->color == model::Color::White ? "White" : "Black") << " vs "
               << match->opponent << ".\n";
     std::cout.flush();
 
-    runGameLoop(game_engine, controller, renderer, command_queue, network_input, match->color,
-                is_server_host);
+    runGameLoop(game_engine, controller, renderer, command_queue, network_input, client,
+                disconnect_overlay, match->color, is_server_host, ws_server.get());
 
     client.disconnect();
     if (ws_server) {

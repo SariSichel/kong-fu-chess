@@ -21,6 +21,7 @@ public:
 
     bool start();
     void stop();
+    void tick();
     int port() const;
 
 private:

@@ -52,7 +52,13 @@ constexpr int kMaxPlayers = 2;
 
 namespace MatchmakingConfig {
 constexpr int kEloMatchRange = 100;
+constexpr int kQueueTimeoutMs = 60000;
 }  // namespace MatchmakingConfig
+
+namespace DisconnectConfig {
+constexpr int kGraceMs = 20000;
+constexpr int kGraceSeconds = 20;
+}  // namespace DisconnectConfig
 
 namespace LobbyConfig {
 constexpr int kWindowWidth = 480;

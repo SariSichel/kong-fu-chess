@@ -41,7 +41,8 @@ ShellLobby::ShellLobby(std::string username, int elo) {
                           LobbyConfig::kPlayButtonWidth, LobbyConfig::kPlayButtonHeight};
 }
 
-std::optional<MatchInfo> ShellLobby::run(network::LocalWsClient& client) {
+std::optional<MatchInfo> ShellLobby::run(network::LocalWsClient& client,
+                                         const std::function<void()>& on_frame) {
     cv::namedWindow(kWindowName);
     cv::moveWindow(kWindowName, 200, 120);
 
@@ -49,6 +50,10 @@ std::optional<MatchInfo> ShellLobby::run(network::LocalWsClient& client) {
     cv::setMouseCallback(kWindowName, onLobbyMouse, &mouse_context);
 
     while (true) {
+        if (on_frame) {
+            on_frame();
+        }
+
         drainPendingMessages();
         drawFrame();
 
@@ -101,6 +106,15 @@ void ShellLobby::applyServerMessage(const std::string& json) {
             state_.status_text = "Press Play to find a match";
             state_.play_enabled = true;
             break;
+        case network::ServerMessageType::QueueTimeout: {
+            const std::optional<network::QueueTimeoutMessage> timeout =
+                network::parseQueueTimeoutMessage(json);
+            state_.status = LobbyStatus::Idle;
+            state_.status_text =
+                timeout.has_value() ? timeout->message : "No opponent found within 60 seconds.";
+            state_.play_enabled = true;
+            break;
+        }
         case network::ServerMessageType::MatchFound: {
             const std::optional<network::MatchFoundMessage> match =
                 network::parseMatchFoundMessage(json);
@@ -128,11 +142,21 @@ void ShellLobby::applyServerMessage(const std::string& json) {
 
             if (!pending_match_.has_value()) {
                 pending_match_ = MatchInfo{};
+                pending_match_->color =
+                    started->white_user == state_.username ? model::Color::White
+                                                           : model::Color::Black;
+                pending_match_->opponent = pending_match_->color == model::Color::White
+                                               ? started->black_user
+                                               : started->white_user;
+                pending_match_->port = started->port;
             }
 
             pending_match_->white_user = started->white_user;
             pending_match_->black_user = started->black_user;
             pending_match_->port = started->port;
+            state_.status = LobbyStatus::Matched;
+            state_.status_text = "Reconnected! Resuming game...";
+            state_.play_enabled = false;
             exit_with_match_ = true;
             break;
         }

@@ -5,8 +5,10 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 
+#include "../model/piece.h"
 #include "../model/position.h"
 
 namespace network {
@@ -25,6 +27,7 @@ public:
     void disconnect();
 
     bool isLoggedIn() const { return logged_in_.load(); }
+    std::optional<model::Color> assignedColor() const;
 
     void setMessageHandler(MessageHandler handler);
 
@@ -40,6 +43,8 @@ private:
     std::string url_;
     std::string username_;
     std::atomic<bool> logged_in_{false};
+    mutable std::mutex state_mutex_;
+    std::optional<model::Color> assigned_color_;
     std::mutex handler_mutex_;
     MessageHandler message_handler_;
 };

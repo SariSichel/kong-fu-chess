@@ -73,6 +73,7 @@ set(KONG_FU_CHESS_SOURCES
     src/texttests/script_parser.cpp
     src/texttests/script_runner.cpp
     src/session/session_manager.cpp
+    src/session/disconnect_manager.cpp
     src/session/shell_login.cpp
     src/network/ws_protocol.cpp
     src/network/command_queue.cpp
@@ -93,6 +94,7 @@ add_executable(kong_fu_chess
     src/view/img.cpp
     src/view/piece_sprite.cpp
     src/view/render_helpers.cpp
+    src/view/disconnect_overlay.cpp
     src/view/renderer.cpp
 )
 

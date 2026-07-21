@@ -20,6 +20,7 @@
 #include "engine/move_log.h"
 #include "io/algebraic.h"
 #include "session/session_manager.h"
+#include "session/disconnect_manager.h"
 #include "matchmaking/matchmaking_queue.h"
 #include "network/ws_protocol.h"
 #include "network/command_queue.h"
@@ -1734,6 +1735,128 @@ TEST_CASE("matchmaking queue: matches at ELO boundary of 100") {
     CHECK(match->black.username == "high");
 }
 
+TEST_CASE("matchmaking queue: tick expires entries after timeout") {
+    const int timeout_ms = 60000;
+    matchmaking::MatchmakingQueue queue(100, timeout_ms);
+
+    const auto enqueued_at = std::chrono::steady_clock::now();
+    matchmaking::QueueEntry alice{1, "alice", 1200, enqueued_at};
+    CHECK_FALSE(queue.enqueue(alice).has_value());
+
+    const auto before_timeout = enqueued_at + std::chrono::milliseconds(timeout_ms - 1);
+    CHECK(queue.tick(before_timeout).empty());
+    CHECK(queue.contains(1));
+
+    const auto at_timeout = enqueued_at + std::chrono::milliseconds(timeout_ms);
+    const std::vector<matchmaking::QueueEntry> expired = queue.tick(at_timeout);
+    REQUIRE(expired.size() == 1);
+    CHECK(expired[0].username == "alice");
+    CHECK_FALSE(queue.contains(1));
+}
+
+TEST_CASE("disconnect manager: grace expiry returns opponent winner") {
+    session::DisconnectManager manager(DisconnectConfig::kGraceMs);
+
+    const auto now = std::chrono::steady_clock::now();
+    session::DisconnectGraceEntry entry;
+    entry.username = "alice";
+    entry.color = Color::White;
+    entry.connection_id = 1;
+    entry.disconnected_at = now;
+    entry.grace_until = now + std::chrono::milliseconds(DisconnectConfig::kGraceMs);
+
+    manager.onDisconnect(entry);
+    CHECK(manager.isInGrace("alice"));
+
+    const auto before_expiry = now + std::chrono::milliseconds(DisconnectConfig::kGraceMs - 1);
+    CHECK_FALSE(manager.tick(before_expiry).has_value());
+    CHECK(manager.isInGrace("alice"));
+
+    const auto at_expiry = now + std::chrono::milliseconds(DisconnectConfig::kGraceMs);
+    const std::optional<Color> winner = manager.tick(at_expiry);
+    REQUIRE(winner.has_value());
+    CHECK(*winner == Color::Black);
+    CHECK_FALSE(manager.isInGrace("alice"));
+}
+
+TEST_CASE("disconnect manager: reconnect clears grace entry") {
+    session::DisconnectManager manager(DisconnectConfig::kGraceMs);
+
+    const auto now = std::chrono::steady_clock::now();
+    session::DisconnectGraceEntry entry;
+    entry.username = "bob";
+    entry.color = Color::Black;
+    entry.connection_id = 2;
+    entry.disconnected_at = now;
+    entry.grace_until = now + std::chrono::milliseconds(DisconnectConfig::kGraceMs);
+
+    manager.onDisconnect(entry);
+    CHECK(manager.onReconnect("bob"));
+    CHECK_FALSE(manager.isInGrace("bob"));
+    CHECK_FALSE(manager.tick(now + std::chrono::seconds(30)).has_value());
+}
+
+TEST_CASE("session manager: reserve and reconnect restores color") {
+    session::SessionManager session(NetworkConfig::kDefaultPort);
+    REQUIRE(session.authenticateLobby(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticateLobby(2, "bob") == session::AuthResult::Accepted);
+
+    matchmaking::MatchResult match{{1, "alice", 1200, {}}, {2, "bob", 1180, {}}};
+    session.beginMatch(match);
+
+    session.reserveDisconnectedSlot(1, "alice", Color::White);
+    CHECK_FALSE(session.colorFor(1).has_value());
+    CHECK(session.colorForUsername("alice") == Color::White);
+
+    CHECK(session.reconnect(3, "alice") == session::AuthResult::Accepted);
+    CHECK(session.colorFor(3) == Color::White);
+    CHECK(session.usernameFor(3) == "alice");
+}
+
+TEST_CASE("session manager: resetToLobby clears match state") {
+    session::SessionManager session(NetworkConfig::kDefaultPort);
+    REQUIRE(session.authenticateLobby(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticateLobby(2, "bob") == session::AuthResult::Accepted);
+
+    matchmaking::MatchResult match{{1, "alice", 1200, {}}, {2, "bob", 1180, {}}};
+    session.beginMatch(match);
+    CHECK(session.phase() == session::SessionPhase::InGame);
+
+    session.resetToLobby();
+    CHECK(session.phase() == session::SessionPhase::Lobby);
+    CHECK_FALSE(session.isReady());
+    CHECK_FALSE(session.colorFor(1).has_value());
+    CHECK_FALSE(session.colorFor(2).has_value());
+}
+
+TEST_CASE("ws protocol: queue timeout and disconnect messages round-trip") {
+    const std::string timeout_json =
+        network::serializeQueueTimeout("No opponent found within 60 seconds.");
+    CHECK(network::parseServerMessageType(timeout_json) == network::ServerMessageType::QueueTimeout);
+    const std::optional<network::QueueTimeoutMessage> timeout =
+        network::parseQueueTimeoutMessage(timeout_json);
+    REQUIRE(timeout.has_value());
+    CHECK(timeout->message == "No opponent found within 60 seconds.");
+
+    const std::string disconnected_json =
+        network::serializePlayerDisconnected("bob", "black", DisconnectConfig::kGraceSeconds);
+    CHECK(network::parseServerMessageType(disconnected_json) ==
+          network::ServerMessageType::PlayerDisconnected);
+    const std::optional<network::PlayerDisconnectedMessage> disconnected =
+        network::parsePlayerDisconnectedMessage(disconnected_json);
+    REQUIRE(disconnected.has_value());
+    CHECK(disconnected->username == "bob");
+    CHECK(disconnected->grace_seconds == DisconnectConfig::kGraceSeconds);
+
+    const std::string reconnected_json = network::serializePlayerReconnected("bob");
+    CHECK(network::parseServerMessageType(reconnected_json) ==
+          network::ServerMessageType::PlayerReconnected);
+    const std::optional<network::PlayerReconnectedMessage> reconnected =
+        network::parsePlayerReconnectedMessage(reconnected_json);
+    REQUIRE(reconnected.has_value());
+    CHECK(reconnected->username == "bob");
+}
+
 TEST_CASE("session manager: lobby auth accepts any username without color") {
     session::SessionManager session(NetworkConfig::kDefaultPort);
 
@@ -1898,6 +2021,10 @@ TEST_CASE("ws protocol: serializes server events and responses") {
 
     const std::string login_ok = network::serializeLoginOk("white");
     CHECK(login_ok == R"({"type":"login_ok","color":"white"})");
+    const std::optional<Color> login_color = network::parseLoginOkColor(login_ok);
+    REQUIRE(login_color.has_value());
+    CHECK(*login_color == Color::White);
+    CHECK_FALSE(network::parseLoginOkColor(network::serializeLoginOk("none")).has_value());
 
     const std::string login = network::serializeLoginCommand("alice");
     CHECK(login == R"({"type":"login","username":"alice"})");
