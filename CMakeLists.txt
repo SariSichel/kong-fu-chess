@@ -85,6 +85,7 @@ set(KONG_FU_CHESS_SOURCES
 add_executable(kong_fu_chess
     src/main.cpp
     ${KONG_FU_CHESS_SOURCES}
+    src/session/shell_lobby.cpp
     src/network/ws_server.cpp
     src/network/local_ws_client.cpp
     src/view/img.cpp

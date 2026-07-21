@@ -23,6 +23,11 @@ LocalWsClient::LocalWsClient(std::string url, std::string username)
 
 LocalWsClient::~LocalWsClient() { disconnect(); }
 
+void LocalWsClient::setMessageHandler(MessageHandler handler) {
+    std::lock_guard<std::mutex> lock(handler_mutex_);
+    message_handler_ = std::move(handler);
+}
+
 bool LocalWsClient::connectAndLogin(int timeout_ms) {
     if (logged_in_.load()) {
         return true;
@@ -43,8 +48,17 @@ bool LocalWsClient::connectAndLogin(int timeout_ms) {
             return;
         }
 
-        if (message->str.find(R"("type":"login_ok")") != std::string::npos) {
+        if (parseServerMessageType(message->str) == ServerMessageType::LoginOk) {
             logged_in_.store(true);
+        }
+
+        MessageHandler handler;
+        {
+            std::lock_guard<std::mutex> lock(handler_mutex_);
+            handler = message_handler_;
+        }
+        if (handler) {
+            handler(message->str);
         }
     });
 
@@ -84,6 +98,24 @@ bool LocalWsClient::sendJump(const model::Position& square) {
     }
 
     impl_->web_socket.sendText(serializeJumpCommand(io::positionToAlgebraic(square)));
+    return true;
+}
+
+bool LocalWsClient::sendJoinQueue() {
+    if (!logged_in_.load()) {
+        return false;
+    }
+
+    impl_->web_socket.sendText(serializeJoinQueueCommand());
+    return true;
+}
+
+bool LocalWsClient::sendLeaveQueue() {
+    if (!logged_in_.load()) {
+        return false;
+    }
+
+    impl_->web_socket.sendText(serializeLeaveQueueCommand());
     return true;
 }
 

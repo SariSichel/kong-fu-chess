@@ -5,6 +5,11 @@
 
 namespace session {
 
+struct PlayerCredentials {
+    std::string username;
+    std::string password;
+};
+
 struct TwoPlayerNames {
     std::string white_user;
     std::string white_password;
@@ -14,6 +19,7 @@ struct TwoPlayerNames {
 
 class ShellLogin {
 public:
+    static PlayerCredentials readPlayerCredentials(std::istream& in, std::ostream& out);
     static TwoPlayerNames readTwoPlayerNames(std::istream& in, std::ostream& out);
 };
 

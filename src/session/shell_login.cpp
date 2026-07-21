@@ -48,6 +48,21 @@ std::string readPassword(std::istream& in, std::ostream& out, const char* prompt
 
 }  // namespace
 
+PlayerCredentials ShellLogin::readPlayerCredentials(std::istream& in, std::ostream& out) {
+    PlayerCredentials credentials;
+    credentials.username = readNonEmptyUsername(in, out, "Username: ");
+    if (credentials.username.empty()) {
+        return credentials;
+    }
+
+    credentials.password = readPassword(in, out, "Password: ");
+    if (credentials.password.empty()) {
+        credentials.username.clear();
+    }
+
+    return credentials;
+}
+
 TwoPlayerNames ShellLogin::readTwoPlayerNames(std::istream& in, std::ostream& out) {
     TwoPlayerNames names;
     names.white_user =

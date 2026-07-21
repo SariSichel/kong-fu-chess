@@ -160,7 +160,37 @@ std::optional<ClientCommand> parseClientMessage(const std::string& json) {
         return JumpCommand{*square};
     }
 
+    if (*type == "join_queue") {
+        return JoinQueueCommand{};
+    }
+
+    if (*type == "leave_queue") {
+        return LeaveQueueCommand{};
+    }
+
     return std::nullopt;
+}
+
+ServerMessageType parseServerMessageType(const std::string& json) {
+    const std::optional<std::string> type = extractJsonString(json, "type");
+    if (!type.has_value()) {
+        return ServerMessageType::Unknown;
+    }
+
+    if (*type == "login_ok") {
+        return ServerMessageType::LoginOk;
+    }
+    if (*type == "error") {
+        return ServerMessageType::Error;
+    }
+    if (*type == "queue_joined") {
+        return ServerMessageType::QueueJoined;
+    }
+    if (*type == "queue_left") {
+        return ServerMessageType::QueueLeft;
+    }
+
+    return ServerMessageType::Unknown;
 }
 
 std::string serializeServerEvent(const events::GameEvent& event) {
@@ -204,5 +234,13 @@ std::string serializeMoveCommand(const std::string& from, const std::string& to)
 std::string serializeJumpCommand(const std::string& square) {
     return "{\"type\":\"jump\",\"square\":" + quoteJsonString(square) + '}';
 }
+
+std::string serializeJoinQueueCommand() { return R"({"type":"join_queue"})"; }
+
+std::string serializeLeaveQueueCommand() { return R"({"type":"leave_queue"})"; }
+
+std::string serializeQueueJoined() { return R"({"type":"queue_joined"})"; }
+
+std::string serializeQueueLeft() { return R"({"type":"queue_left"})"; }
 
 }  // namespace network

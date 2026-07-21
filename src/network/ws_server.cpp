@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -62,6 +63,9 @@ struct WsServer::Impl {
     std::mutex clients_mutex;
     std::unordered_map<std::uint64_t, ix::WebSocket*> clients;
 
+    std::mutex queue_mutex;
+    std::set<std::uint64_t> queued_connections;
+
     Impl(session::SessionManager& session_ref, events::EventBus& bus_ref,
          CommandQueue& command_queue_ref, int server_port)
         : session(session_ref),
@@ -95,6 +99,39 @@ struct WsServer::Impl {
         web_socket.sendText(serializeLoginOk(colorLabel(*color)));
     }
 
+    void handleJoinQueue(std::uint64_t connection_id, ix::WebSocket& web_socket) {
+        if (!session.colorFor(connection_id).has_value()) {
+            web_socket.sendText(serializeErrorMessage("Not authenticated"));
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            queued_connections.insert(connection_id);
+        }
+
+        web_socket.sendText(serializeQueueJoined());
+    }
+
+    void handleLeaveQueue(std::uint64_t connection_id, ix::WebSocket& web_socket) {
+        if (!session.colorFor(connection_id).has_value()) {
+            web_socket.sendText(serializeErrorMessage("Not authenticated"));
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            queued_connections.erase(connection_id);
+        }
+
+        web_socket.sendText(serializeQueueLeft());
+    }
+
+    void removeFromQueue(std::uint64_t connection_id) {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        queued_connections.erase(connection_id);
+    }
+
     void handleClientMessage(const std::shared_ptr<ix::ConnectionState>& connection_state,
                              ix::WebSocket& web_socket, const ix::WebSocketMessagePtr& message) {
         const std::optional<std::uint64_t> connection_id = parseConnectionId(*connection_state);
@@ -109,6 +146,7 @@ struct WsServer::Impl {
         }
 
         if (message->type == ix::WebSocketMessageType::Close) {
+            removeFromQueue(*connection_id);
             session.disconnect(*connection_id);
             std::lock_guard<std::mutex> lock(clients_mutex);
             clients.erase(*connection_id);
@@ -127,6 +165,16 @@ struct WsServer::Impl {
 
         if (std::holds_alternative<LoginCommand>(*command)) {
             handleLogin(*connection_id, web_socket, std::get<LoginCommand>(*command));
+            return;
+        }
+
+        if (std::holds_alternative<JoinQueueCommand>(*command)) {
+            handleJoinQueue(*connection_id, web_socket);
+            return;
+        }
+
+        if (std::holds_alternative<LeaveQueueCommand>(*command)) {
+            handleLeaveQueue(*connection_id, web_socket);
             return;
         }
 
