@@ -50,6 +50,10 @@ constexpr int kDefaultPort = 8765;
 constexpr int kMaxPlayers = 2;
 }  // namespace NetworkConfig
 
+namespace MatchmakingConfig {
+constexpr int kEloMatchRange = 100;
+}  // namespace MatchmakingConfig
+
 namespace LobbyConfig {
 constexpr int kWindowWidth = 480;
 constexpr int kWindowHeight = 320;

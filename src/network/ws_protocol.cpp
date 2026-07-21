@@ -1,6 +1,7 @@
 #include "ws_protocol.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 
@@ -88,6 +89,66 @@ std::optional<std::string> extractJsonString(const std::string& json, const std:
 
     ++cursor;
     return readJsonStringValue(cursor);
+}
+
+std::optional<int> extractJsonInt(const std::string& json, const std::string& key) {
+    const std::string needle = quoteJsonString(key);
+    const std::size_t key_pos = json.find(needle);
+    if (key_pos == std::string::npos) {
+        return std::nullopt;
+    }
+
+    const char* cursor = json.c_str() + key_pos + needle.size();
+    cursor = skipWhitespace(cursor);
+    if (*cursor != ':') {
+        return std::nullopt;
+    }
+
+    ++cursor;
+    cursor = skipWhitespace(cursor);
+    char* end = nullptr;
+    const long value = std::strtol(cursor, &end, 10);
+    if (cursor == end) {
+        return std::nullopt;
+    }
+    return static_cast<int>(value);
+}
+
+bool parsePieceLabel(const std::string& label, model::PieceType& type, model::Color& color) {
+    if (label.size() != 2) {
+        return false;
+    }
+
+    if (label[0] == 'w') {
+        color = model::Color::White;
+    } else if (label[0] == 'b') {
+        color = model::Color::Black;
+    } else {
+        return false;
+    }
+
+    switch (label[1]) {
+        case 'K':
+            type = model::PieceType::King;
+            return true;
+        case 'Q':
+            type = model::PieceType::Queen;
+            return true;
+        case 'R':
+            type = model::PieceType::Rook;
+            return true;
+        case 'B':
+            type = model::PieceType::Bishop;
+            return true;
+        case 'N':
+            type = model::PieceType::Knight;
+            return true;
+        case 'P':
+            type = model::PieceType::Pawn;
+            return true;
+        default:
+            return false;
+    }
 }
 
 std::string serializeCompletedMove(const realtime::CompletedMoveEvent& event) {
@@ -189,8 +250,143 @@ ServerMessageType parseServerMessageType(const std::string& json) {
     if (*type == "queue_left") {
         return ServerMessageType::QueueLeft;
     }
+    if (*type == "match_found") {
+        return ServerMessageType::MatchFound;
+    }
+    if (*type == "game_started") {
+        return ServerMessageType::GameStarted;
+    }
+    if (*type == "move_completed") {
+        return ServerMessageType::MoveCompleted;
+    }
+    if (*type == "jump_capture") {
+        return ServerMessageType::JumpCapture;
+    }
+    if (*type == "game_ended") {
+        return ServerMessageType::GameEnded;
+    }
 
     return ServerMessageType::Unknown;
+}
+
+model::Color colorFromLabel(const std::string& label) {
+    return label == "black" ? model::Color::Black : model::Color::White;
+}
+
+std::string colorLabel(model::Color color) {
+    return color == model::Color::White ? "white" : "black";
+}
+
+std::optional<MatchFoundMessage> parseMatchFoundMessage(const std::string& json) {
+    if (parseServerMessageType(json) != ServerMessageType::MatchFound) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string> color = extractJsonString(json, "color");
+    const std::optional<std::string> opponent = extractJsonString(json, "opponent");
+    const std::optional<int> port = extractJsonInt(json, "port");
+    if (!color.has_value() || !opponent.has_value() || !port.has_value()) {
+        return std::nullopt;
+    }
+
+    return MatchFoundMessage{colorFromLabel(*color), *opponent, *port};
+}
+
+std::optional<GameStartedMessage> parseGameStartedMessage(const std::string& json) {
+    if (parseServerMessageType(json) != ServerMessageType::GameStarted) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string> white = extractJsonString(json, "white");
+    const std::optional<std::string> black = extractJsonString(json, "black");
+    const std::optional<int> port = extractJsonInt(json, "port");
+    if (!white.has_value() || !black.has_value() || !port.has_value()) {
+        return std::nullopt;
+    }
+
+    return GameStartedMessage{*white, *black, *port};
+}
+
+std::optional<events::GameEvent> parseServerGameEvent(const std::string& json) {
+    const ServerMessageType type = parseServerMessageType(json);
+    if (type == ServerMessageType::GameStarted) {
+        const std::optional<GameStartedMessage> started = parseGameStartedMessage(json);
+        if (!started.has_value()) {
+            return std::nullopt;
+        }
+        return events::GameStarted{started->white_user, started->black_user, started->port};
+    }
+
+    if (type == ServerMessageType::MoveCompleted) {
+        realtime::CompletedMoveEvent event;
+        const std::optional<int> timestamp = extractJsonInt(json, "timestamp_ms");
+        const std::optional<std::string> piece = extractJsonString(json, "piece");
+        const std::optional<std::string> from = extractJsonString(json, "from");
+        const std::optional<std::string> to = extractJsonString(json, "to");
+        if (!timestamp.has_value() || !piece.has_value() || !from.has_value() || !to.has_value()) {
+            return std::nullopt;
+        }
+
+        if (!parsePieceLabel(*piece, event.piece_type, event.piece_color)) {
+            return std::nullopt;
+        }
+
+        event.timestamp_ms = *timestamp;
+        event.from = io::algebraicToPosition(*from);
+        event.to = io::algebraicToPosition(*to);
+        if (event.from.row < 0 || event.to.row < 0) {
+            return std::nullopt;
+        }
+
+        const std::optional<std::string> captured = extractJsonString(json, "captured");
+        if (captured.has_value() &&
+            parsePieceLabel(*captured, event.captured_type, event.captured_color)) {
+            // captured fields set by parsePieceLabel
+        } else {
+            event.captured_type = model::PieceType::Empty;
+        }
+
+        return event;
+    }
+
+    if (type == ServerMessageType::JumpCapture) {
+        realtime::JumpCaptureEvent event;
+        const std::optional<int> timestamp = extractJsonInt(json, "timestamp_ms");
+        const std::optional<std::string> jumper = extractJsonString(json, "jumper");
+        const std::optional<std::string> victim = extractJsonString(json, "victim");
+        const std::optional<std::string> jump_square = extractJsonString(json, "jump_square");
+        const std::optional<std::string> victim_from = extractJsonString(json, "victim_from");
+        const std::optional<std::string> victim_to = extractJsonString(json, "victim_to");
+        if (!timestamp.has_value() || !jumper.has_value() || !victim.has_value() ||
+            !jump_square.has_value() || !victim_from.has_value() || !victim_to.has_value()) {
+            return std::nullopt;
+        }
+
+        if (!parsePieceLabel(*jumper, event.jumper_type, event.jumper_color) ||
+            !parsePieceLabel(*victim, event.victim_type, event.victim_color)) {
+            return std::nullopt;
+        }
+
+        event.timestamp_ms = *timestamp;
+        event.jump_square = io::algebraicToPosition(*jump_square);
+        event.victim_from = io::algebraicToPosition(*victim_from);
+        event.victim_to = io::algebraicToPosition(*victim_to);
+        if (event.jump_square.row < 0 || event.victim_from.row < 0 || event.victim_to.row < 0) {
+            return std::nullopt;
+        }
+
+        return event;
+    }
+
+    if (type == ServerMessageType::GameEnded) {
+        const std::optional<std::string> winner = extractJsonString(json, "winner");
+        if (!winner.has_value()) {
+            return std::nullopt;
+        }
+        return events::GameEnded{colorFromLabel(*winner)};
+    }
+
+    return std::nullopt;
 }
 
 std::string serializeServerEvent(const events::GameEvent& event) {
@@ -242,5 +438,13 @@ std::string serializeLeaveQueueCommand() { return R"({"type":"leave_queue"})"; }
 std::string serializeQueueJoined() { return R"({"type":"queue_joined"})"; }
 
 std::string serializeQueueLeft() { return R"({"type":"queue_left"})"; }
+
+std::string serializeMatchFound(const std::string& color, const std::string& opponent, int port) {
+    std::ostringstream out;
+    out << "{\"type\":\"match_found\""
+        << ",\"color\":" << quoteJsonString(color) << ",\"opponent\":"
+        << quoteJsonString(opponent) << ",\"port\":" << port << '}';
+    return out.str();
+}
 
 }  // namespace network

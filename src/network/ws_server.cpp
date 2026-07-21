@@ -6,15 +6,16 @@
 #include <ixwebsocket/IXWebSocketMessage.h>
 #include <ixwebsocket/IXWebSocketServer.h>
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <variant>
 
-#include "../model/piece.h"
+#include "../constants.h"
+#include "../db/user_store.h"
 #include "ws_protocol.h"
 
 namespace network {
@@ -43,16 +44,14 @@ std::string authErrorMessage(session::AuthResult result) {
     }
 }
 
-std::string colorLabel(model::Color color) {
-    return color == model::Color::White ? "white" : "black";
-}
-
 }  // namespace
 
 struct WsServer::Impl {
     session::SessionManager& session;
     events::EventBus& bus;
+    db::UserStore& user_store;
     CommandQueue& command_queue;
+    matchmaking::MatchmakingQueue matchmaking_queue{MatchmakingConfig::kEloMatchRange};
     const int port;
 
     std::unique_ptr<ix::WebSocketServer> server;
@@ -63,15 +62,21 @@ struct WsServer::Impl {
     std::mutex clients_mutex;
     std::unordered_map<std::uint64_t, ix::WebSocket*> clients;
 
-    std::mutex queue_mutex;
-    std::set<std::uint64_t> queued_connections;
-
-    Impl(session::SessionManager& session_ref, events::EventBus& bus_ref,
+    Impl(session::SessionManager& session_ref, events::EventBus& bus_ref, db::UserStore& store_ref,
          CommandQueue& command_queue_ref, int server_port)
         : session(session_ref),
           bus(bus_ref),
+          user_store(store_ref),
           command_queue(command_queue_ref),
           port(server_port) {}
+
+    void sendToConnection(std::uint64_t connection_id, const std::string& json) {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        const auto it = clients.find(connection_id);
+        if (it != clients.end() && it->second != nullptr) {
+            it->second->sendText(json);
+        }
+    }
 
     void broadcast(const std::string& json) {
         std::lock_guard<std::mutex> lock(clients_mutex);
@@ -92,45 +97,64 @@ struct WsServer::Impl {
 
         const std::optional<model::Color> color = session.colorFor(connection_id);
         if (!color.has_value()) {
-            web_socket.sendText(serializeErrorMessage("Login failed"));
+            web_socket.sendText(serializeLoginOk("none"));
             return;
         }
 
         web_socket.sendText(serializeLoginOk(colorLabel(*color)));
     }
 
+    void notifyMatch(const matchmaking::MatchResult& match) {
+        session.beginMatch(match);
+
+        sendToConnection(match.white.connection_id,
+                         serializeMatchFound("white", match.black.username, port));
+        sendToConnection(match.black.connection_id,
+                         serializeMatchFound("black", match.white.username, port));
+
+        bus.publish(session.rosterSnapshot());
+    }
+
     void handleJoinQueue(std::uint64_t connection_id, ix::WebSocket& web_socket) {
-        if (!session.colorFor(connection_id).has_value()) {
+        if (!session.usernameFor(connection_id).has_value()) {
             web_socket.sendText(serializeErrorMessage("Not authenticated"));
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lock(queue_mutex);
-            queued_connections.insert(connection_id);
+        if (session.phase() == session::SessionPhase::InGame && session.isReady()) {
+            web_socket.sendText(serializeErrorMessage("Already in game"));
+            return;
         }
 
+        const std::string username = *session.usernameFor(connection_id);
+        int elo = 1200;
+        if (const std::optional<db::UserRecord> record = user_store.find(username);
+            record.has_value()) {
+            elo = record->elo;
+        }
+
+        matchmaking::QueueEntry entry{connection_id, username, elo,
+                                      std::chrono::steady_clock::now()};
+
+        const std::optional<matchmaking::MatchResult> match = matchmaking_queue.enqueue(entry);
         web_socket.sendText(serializeQueueJoined());
+
+        if (match.has_value()) {
+            notifyMatch(*match);
+        }
     }
 
     void handleLeaveQueue(std::uint64_t connection_id, ix::WebSocket& web_socket) {
-        if (!session.colorFor(connection_id).has_value()) {
+        if (!session.usernameFor(connection_id).has_value()) {
             web_socket.sendText(serializeErrorMessage("Not authenticated"));
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lock(queue_mutex);
-            queued_connections.erase(connection_id);
-        }
-
+        matchmaking_queue.remove(connection_id);
         web_socket.sendText(serializeQueueLeft());
     }
 
-    void removeFromQueue(std::uint64_t connection_id) {
-        std::lock_guard<std::mutex> lock(queue_mutex);
-        queued_connections.erase(connection_id);
-    }
+    void removeFromQueue(std::uint64_t connection_id) { matchmaking_queue.remove(connection_id); }
 
     void handleClientMessage(const std::shared_ptr<ix::ConnectionState>& connection_state,
                              ix::WebSocket& web_socket, const ix::WebSocketMessagePtr& message) {
@@ -187,9 +211,9 @@ struct WsServer::Impl {
     }
 };
 
-WsServer::WsServer(session::SessionManager& session, events::EventBus& bus,
+WsServer::WsServer(session::SessionManager& session, events::EventBus& bus, db::UserStore& user_store,
                    CommandQueue& command_queue, int port)
-    : impl_(std::make_unique<Impl>(session, bus, command_queue, port)) {}
+    : impl_(std::make_unique<Impl>(session, bus, user_store, command_queue, port)) {}
 
 WsServer::~WsServer() { stop(); }
 

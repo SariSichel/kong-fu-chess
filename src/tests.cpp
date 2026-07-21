@@ -4,6 +4,7 @@
 #include <sstream>
 #include <string>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +20,7 @@
 #include "engine/move_log.h"
 #include "io/algebraic.h"
 #include "session/session_manager.h"
+#include "matchmaking/matchmaking_queue.h"
 #include "network/ws_protocol.h"
 #include "network/command_queue.h"
 #include "network/network_input.h"
@@ -1688,6 +1690,75 @@ TEST_CASE("session manager: disconnect frees a slot") {
     CHECK(session.isReady());
 }
 
+TEST_CASE("matchmaking queue: pairs players within ELO range FIFO") {
+    matchmaking::MatchmakingQueue queue(100);
+
+    matchmaking::QueueEntry alice{1, "alice", 1200, std::chrono::steady_clock::now()};
+    CHECK_FALSE(queue.enqueue(alice).has_value());
+
+    matchmaking::QueueEntry bob{2, "bob", 1150, std::chrono::steady_clock::now()};
+    const std::optional<matchmaking::MatchResult> match = queue.enqueue(bob);
+    REQUIRE(match.has_value());
+    CHECK(match->white.username == "alice");
+    CHECK(match->black.username == "bob");
+    CHECK(match->white.connection_id == 1);
+    CHECK(match->black.connection_id == 2);
+}
+
+TEST_CASE("matchmaking queue: skips players outside ELO range") {
+    matchmaking::MatchmakingQueue queue(100);
+
+    matchmaking::QueueEntry alice{1, "alice", 1200, std::chrono::steady_clock::now()};
+    CHECK_FALSE(queue.enqueue(alice).has_value());
+
+    matchmaking::QueueEntry carol{2, "carol", 1400, std::chrono::steady_clock::now()};
+    CHECK_FALSE(queue.enqueue(carol).has_value());
+
+    matchmaking::QueueEntry bob{3, "bob", 1100, std::chrono::steady_clock::now()};
+    const std::optional<matchmaking::MatchResult> match = queue.enqueue(bob);
+    REQUIRE(match.has_value());
+    CHECK(match->white.username == "alice");
+    CHECK(match->black.username == "bob");
+}
+
+TEST_CASE("matchmaking queue: matches at ELO boundary of 100") {
+    matchmaking::MatchmakingQueue queue(100);
+
+    matchmaking::QueueEntry low{1, "low", 1200, std::chrono::steady_clock::now()};
+    CHECK_FALSE(queue.enqueue(low).has_value());
+
+    matchmaking::QueueEntry high{2, "high", 1300, std::chrono::steady_clock::now()};
+    const std::optional<matchmaking::MatchResult> match = queue.enqueue(high);
+    REQUIRE(match.has_value());
+    CHECK(match->white.username == "low");
+    CHECK(match->black.username == "high");
+}
+
+TEST_CASE("session manager: lobby auth accepts any username without color") {
+    session::SessionManager session(NetworkConfig::kDefaultPort);
+
+    CHECK(session.authenticateLobby(1, "alice") == session::AuthResult::Accepted);
+    CHECK(session.usernameFor(1) == "alice");
+    CHECK_FALSE(session.colorFor(1).has_value());
+    CHECK(session.phase() == session::SessionPhase::Lobby);
+}
+
+TEST_CASE("session manager: beginMatch assigns colors and marks ready") {
+    session::SessionManager session(NetworkConfig::kDefaultPort);
+    REQUIRE(session.authenticateLobby(1, "alice") == session::AuthResult::Accepted);
+    REQUIRE(session.authenticateLobby(2, "bob") == session::AuthResult::Accepted);
+
+    matchmaking::MatchResult match{{1, "alice", 1200, {}}, {2, "bob", 1180, {}}};
+    session.beginMatch(match);
+
+    CHECK(session.colorFor(1) == Color::White);
+    CHECK(session.colorFor(2) == Color::Black);
+    CHECK(session.isReady());
+    CHECK(session.phase() == session::SessionPhase::InGame);
+    CHECK(session.rosterSnapshot().white_user == "alice");
+    CHECK(session.rosterSnapshot().black_user == "bob");
+}
+
 TEST_CASE("game engine: publishes completed move events to EventBus") {
     Board board = makeCommonRouteBoard();
     engine::GameEngine engine;
@@ -1836,6 +1907,20 @@ TEST_CASE("ws protocol: serializes server events and responses") {
 
     const std::string jump_cmd = network::serializeJumpCommand("e4");
     CHECK(jump_cmd == R"({"type":"jump","square":"e4"})");
+
+    const std::string match_found = network::serializeMatchFound("white", "bob", 8765);
+    CHECK(match_found.find(R"("type":"match_found")") != std::string::npos);
+    const std::optional<network::MatchFoundMessage> parsed_match =
+        network::parseMatchFoundMessage(match_found);
+    REQUIRE(parsed_match.has_value());
+    CHECK(parsed_match->color == Color::White);
+    CHECK(parsed_match->opponent == "bob");
+    CHECK(parsed_match->port == 8765);
+
+    const std::optional<network::ClientCommand> join =
+        network::parseClientMessage(R"({"type":"join_queue"})");
+    REQUIRE(join.has_value());
+    CHECK(network::clientCommandType(*join) == network::ClientCommandType::JoinQueue);
 }
 
 TEST_CASE("command queue: drains pushed commands in order") {

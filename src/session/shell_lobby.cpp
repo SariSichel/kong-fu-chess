@@ -41,7 +41,7 @@ ShellLobby::ShellLobby(std::string username, int elo) {
                           LobbyConfig::kPlayButtonWidth, LobbyConfig::kPlayButtonHeight};
 }
 
-int ShellLobby::run(network::LocalWsClient& client) {
+std::optional<MatchInfo> ShellLobby::run(network::LocalWsClient& client) {
     cv::namedWindow(kWindowName);
     cv::moveWindow(kWindowName, 200, 120);
 
@@ -52,6 +52,10 @@ int ShellLobby::run(network::LocalWsClient& client) {
         drainPendingMessages();
         drawFrame();
 
+        if (exit_with_match_) {
+            break;
+        }
+
         const int key = cv::waitKey(LobbyConfig::kFrameMs);
         if (key == 27) {
             break;
@@ -59,7 +63,12 @@ int ShellLobby::run(network::LocalWsClient& client) {
     }
 
     cv::destroyWindow(kWindowName);
-    return 0;
+
+    if (exit_with_match_ && pending_match_.has_value()) {
+        return pending_match_;
+    }
+
+    return std::nullopt;
 }
 
 void ShellLobby::handleServerMessage(const std::string& json) {
@@ -92,6 +101,41 @@ void ShellLobby::applyServerMessage(const std::string& json) {
             state_.status_text = "Press Play to find a match";
             state_.play_enabled = true;
             break;
+        case network::ServerMessageType::MatchFound: {
+            const std::optional<network::MatchFoundMessage> match =
+                network::parseMatchFoundMessage(json);
+            if (!match.has_value()) {
+                break;
+            }
+
+            MatchInfo info;
+            info.color = match->color;
+            info.opponent = match->opponent;
+            info.port = match->port;
+            pending_match_ = info;
+
+            state_.status = LobbyStatus::Matched;
+            state_.status_text = "Matched! Starting game...";
+            state_.play_enabled = false;
+            break;
+        }
+        case network::ServerMessageType::GameStarted: {
+            const std::optional<network::GameStartedMessage> started =
+                network::parseGameStartedMessage(json);
+            if (!started.has_value()) {
+                break;
+            }
+
+            if (!pending_match_.has_value()) {
+                pending_match_ = MatchInfo{};
+            }
+
+            pending_match_->white_user = started->white_user;
+            pending_match_->black_user = started->black_user;
+            pending_match_->port = started->port;
+            exit_with_match_ = true;
+            break;
+        }
         case network::ServerMessageType::Error:
             state_.status = LobbyStatus::Error;
             state_.status_text = "Failed to join queue";

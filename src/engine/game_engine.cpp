@@ -19,6 +19,11 @@ void GameEngine::reset() {
     move_log_.clear();
 }
 
+void GameEngine::applyRemoteGameEnded(model::Color winner) {
+    is_game_over_ = true;
+    winner_ = winner;
+}
+
 int GameEngine::elapsedMs() const {
     return arbiter_.elapsedMs();
 }

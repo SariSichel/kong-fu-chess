@@ -1,8 +1,11 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <string>
+
+#include "match_info.h"
 
 namespace network {
 class LocalWsClient;
@@ -13,6 +16,7 @@ namespace session {
 enum class LobbyStatus {
     Idle,
     Searching,
+    Matched,
     Error,
 };
 
@@ -40,7 +44,7 @@ class ShellLobby {
 public:
     ShellLobby(std::string username, int elo);
 
-    int run(network::LocalWsClient& client);
+    std::optional<MatchInfo> run(network::LocalWsClient& client);
 
     void handleServerMessage(const std::string& json);
     void handleMouseClick(int x, int y, network::LocalWsClient& client);
@@ -51,7 +55,10 @@ private:
     void onPlayClicked(network::LocalWsClient& client);
     void drawFrame() const;
     bool containsPlayButton(int x, int y) const;
+
     LobbyState state_;
+    std::optional<MatchInfo> pending_match_;
+    bool exit_with_match_ = false;
     std::mutex messages_mutex_;
     std::queue<std::string> pending_messages_;
 };

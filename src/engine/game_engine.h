@@ -39,6 +39,8 @@ public:
 
     void setEventBus(events::EventBus* bus) { event_bus_ = bus; }
 
+    void applyRemoteGameEnded(model::Color winner);
+
     model::Board& board() { return board_; }
     const model::Board& board() const { return board_; }
 
