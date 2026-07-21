@@ -29,6 +29,23 @@ void advanceUntilIdle(engine::GameEngine& game_engine) {
     }
 }
 
+// Begin animating a remote move locally the moment it is initiated on the host.
+// requestMove starts a motion that the client's main loop interpolates over its full
+// duration, so the piece slides just like a locally initiated move. If the square is
+// already busy (e.g. the client's own optimistic move is animating) requestMove is a
+// no-op, which harmlessly deduplicates.
+void startMove(engine::GameEngine& game_engine, const model::Position& from,
+               const model::Position& to) {
+    game_engine.requestMove(from, to);
+}
+
+void startJump(engine::GameEngine& game_engine, const model::Position& square) {
+    game_engine.requestJump(square);
+}
+
+// Completion events are now reconciliation only: the animation was already started by
+// the corresponding move_started event. We only fast-forward as a fallback if the start
+// was somehow missed, so an in-progress animation is left to finish naturally.
 void syncCompletedMove(engine::GameEngine& game_engine, const model::Position& from,
                        const model::Position& to, model::PieceType piece_type,
                        model::Color piece_color) {
@@ -37,13 +54,12 @@ void syncCompletedMove(engine::GameEngine& game_engine, const model::Position& f
         return;
     }
 
+    // Animation started via move_started is still playing; let it complete on its own.
     if (game_engine.isBusyAt(from) || game_engine.isBusyAt(to)) {
-        advanceUntilIdle(game_engine);
-        if (pieceAt(game_engine.board(), to, piece_type, piece_color)) {
-            return;
-        }
+        return;
     }
 
+    // Fallback: the move_started event was missed, apply the move now to stay consistent.
     if (!game_engine.requestMove(from, to)) {
         return;
     }
@@ -52,11 +68,12 @@ void syncCompletedMove(engine::GameEngine& game_engine, const model::Position& f
 }
 
 void syncJumpCapture(engine::GameEngine& game_engine, const model::Position& jump_square) {
+    // Jump animation started via jump_started is still playing; let it finish naturally.
     if (game_engine.isBusyAt(jump_square)) {
-        advanceUntilIdle(game_engine);
         return;
     }
 
+    // Fallback: the jump_started event was missed, apply it now to stay consistent.
     if (!game_engine.requestJump(jump_square)) {
         return;
     }
@@ -70,6 +87,16 @@ bool ClientGameSync::applyMessage(const std::string& json, engine::GameEngine& g
     const std::optional<events::GameEvent> event = parseServerGameEvent(json);
     if (!event.has_value()) {
         return false;
+    }
+
+    if (const auto* started = std::get_if<realtime::MoveStartedEvent>(&*event)) {
+        startMove(game_engine, started->from, started->to);
+        return true;
+    }
+
+    if (const auto* started = std::get_if<realtime::JumpStartedEvent>(&*event)) {
+        startJump(game_engine, started->square);
+        return true;
     }
 
     if (const auto* move = std::get_if<realtime::CompletedMoveEvent>(&*event)) {

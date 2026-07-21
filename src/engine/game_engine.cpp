@@ -101,6 +101,17 @@ bool GameEngine::requestMove(const model::Position& from, const model::Position&
     arbiter_.addMotion(realtime::Motion(static_cast<int>(next_motion_id_++), from, to,
                                         realtime::MotionType::Move, arbiter_.elapsedMs(),
                                         durationMs, piece.type(), piece.color()));
+
+    if (event_bus_ != nullptr) {
+        realtime::MoveStartedEvent started;
+        started.timestamp_ms = arbiter_.elapsedMs();
+        started.piece_type = piece.type();
+        started.piece_color = piece.color();
+        started.from = from;
+        started.to = to;
+        event_bus_->publish(started);
+    }
+
     return true;
 }
 
@@ -123,6 +134,16 @@ bool GameEngine::requestJump(const model::Position& pos) {
                                         arbiter_.elapsedMs(),
                                         static_cast<int>(GameConfig::kJumpDurationMs),
                                         piece.type(), piece.color()));
+
+    if (event_bus_ != nullptr) {
+        realtime::JumpStartedEvent started;
+        started.timestamp_ms = arbiter_.elapsedMs();
+        started.piece_type = piece.type();
+        started.piece_color = piece.color();
+        started.square = pos;
+        event_bus_->publish(started);
+    }
+
     return true;
 }
 

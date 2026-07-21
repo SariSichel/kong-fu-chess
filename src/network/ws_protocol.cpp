@@ -151,6 +151,25 @@ bool parsePieceLabel(const std::string& label, model::PieceType& type, model::Co
     }
 }
 
+std::string serializeMoveStarted(const realtime::MoveStartedEvent& event) {
+    std::ostringstream out;
+    out << "{\"type\":\"move_started\""
+        << ",\"timestamp_ms\":" << event.timestamp_ms << ",\"piece\":"
+        << quoteJsonString(engine::MoveLog::pieceLabel(event.piece_type, event.piece_color))
+        << ",\"from\":" << quoteJsonString(io::positionToAlgebraic(event.from))
+        << ",\"to\":" << quoteJsonString(io::positionToAlgebraic(event.to)) << '}';
+    return out.str();
+}
+
+std::string serializeJumpStarted(const realtime::JumpStartedEvent& event) {
+    std::ostringstream out;
+    out << "{\"type\":\"jump_started\""
+        << ",\"timestamp_ms\":" << event.timestamp_ms << ",\"piece\":"
+        << quoteJsonString(engine::MoveLog::pieceLabel(event.piece_type, event.piece_color))
+        << ",\"square\":" << quoteJsonString(io::positionToAlgebraic(event.square)) << '}';
+    return out.str();
+}
+
 std::string serializeCompletedMove(const realtime::CompletedMoveEvent& event) {
     std::ostringstream out;
     out << "{\"type\":\"move_completed\""
@@ -256,8 +275,14 @@ ServerMessageType parseServerMessageType(const std::string& json) {
     if (*type == "game_started") {
         return ServerMessageType::GameStarted;
     }
+    if (*type == "move_started") {
+        return ServerMessageType::MoveStarted;
+    }
     if (*type == "move_completed") {
         return ServerMessageType::MoveCompleted;
+    }
+    if (*type == "jump_started") {
+        return ServerMessageType::JumpStarted;
     }
     if (*type == "jump_capture") {
         return ServerMessageType::JumpCapture;
@@ -380,6 +405,52 @@ std::optional<events::GameEvent> parseServerGameEvent(const std::string& json) {
         return events::GameStarted{started->white_user, started->black_user, started->port};
     }
 
+    if (type == ServerMessageType::MoveStarted) {
+        realtime::MoveStartedEvent event;
+        const std::optional<int> timestamp = extractJsonInt(json, "timestamp_ms");
+        const std::optional<std::string> piece = extractJsonString(json, "piece");
+        const std::optional<std::string> from = extractJsonString(json, "from");
+        const std::optional<std::string> to = extractJsonString(json, "to");
+        if (!timestamp.has_value() || !piece.has_value() || !from.has_value() || !to.has_value()) {
+            return std::nullopt;
+        }
+
+        if (!parsePieceLabel(*piece, event.piece_type, event.piece_color)) {
+            return std::nullopt;
+        }
+
+        event.timestamp_ms = *timestamp;
+        event.from = io::algebraicToPosition(*from);
+        event.to = io::algebraicToPosition(*to);
+        if (event.from.row < 0 || event.to.row < 0) {
+            return std::nullopt;
+        }
+
+        return event;
+    }
+
+    if (type == ServerMessageType::JumpStarted) {
+        realtime::JumpStartedEvent event;
+        const std::optional<int> timestamp = extractJsonInt(json, "timestamp_ms");
+        const std::optional<std::string> piece = extractJsonString(json, "piece");
+        const std::optional<std::string> square = extractJsonString(json, "square");
+        if (!timestamp.has_value() || !piece.has_value() || !square.has_value()) {
+            return std::nullopt;
+        }
+
+        if (!parsePieceLabel(*piece, event.piece_type, event.piece_color)) {
+            return std::nullopt;
+        }
+
+        event.timestamp_ms = *timestamp;
+        event.square = io::algebraicToPosition(*square);
+        if (event.square.row < 0) {
+            return std::nullopt;
+        }
+
+        return event;
+    }
+
     if (type == ServerMessageType::MoveCompleted) {
         realtime::CompletedMoveEvent event;
         const std::optional<int> timestamp = extractJsonInt(json, "timestamp_ms");
@@ -462,8 +533,16 @@ std::string serializeServerEvent(const events::GameEvent& event) {
         return out.str();
     }
 
+    if (std::holds_alternative<realtime::MoveStartedEvent>(event)) {
+        return serializeMoveStarted(std::get<realtime::MoveStartedEvent>(event));
+    }
+
     if (std::holds_alternative<realtime::CompletedMoveEvent>(event)) {
         return serializeCompletedMove(std::get<realtime::CompletedMoveEvent>(event));
+    }
+
+    if (std::holds_alternative<realtime::JumpStartedEvent>(event)) {
+        return serializeJumpStarted(std::get<realtime::JumpStartedEvent>(event));
     }
 
     if (std::holds_alternative<realtime::JumpCaptureEvent>(event)) {

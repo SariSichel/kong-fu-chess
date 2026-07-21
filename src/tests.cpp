@@ -2194,7 +2194,7 @@ TEST_CASE("client game sync: applies completed move events to engine") {
     CHECK(engine.board().cell(pos(0, 0)).isEmpty());
 }
 
-TEST_CASE("client game sync: completes optimistic in-flight moves on server echo") {
+TEST_CASE("client game sync: lets optimistic in-flight moves animate on server echo") {
     Board board = makeCommonRouteBoard();
     engine::GameEngine engine;
     copyBoardIntoEngine(engine, board);
@@ -2211,6 +2211,40 @@ TEST_CASE("client game sync: completes optimistic in-flight moves on server echo
 
     const std::string move_json = network::serializeServerEvent(move);
     CHECK(network::ClientGameSync::applyMessage(move_json, engine));
+
+    // The completion echo must NOT teleport an in-flight move; it should keep
+    // animating so both windows show the same smooth slide.
+    CHECK_FALSE(engine.activeMotions().empty());
+    CHECK(engine.board().cell(pos(0, 2)).isEmpty());
+
+    // Once the animation finishes, the move resolves to the same final state.
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 2)));
+
+    CHECK(engine.board().cell(pos(0, 2)).type() == PieceType::Rook);
+    CHECK(engine.board().cell(pos(0, 2)).color() == Color::White);
+    CHECK(engine.board().cell(pos(0, 0)).isEmpty());
+}
+
+TEST_CASE("client game sync: move_started animates a remote move locally") {
+    Board board = makeCommonRouteBoard();
+    engine::GameEngine engine;
+    copyBoardIntoEngine(engine, board);
+
+    realtime::MoveStartedEvent started;
+    started.timestamp_ms = 0;
+    started.piece_type = PieceType::Rook;
+    started.piece_color = Color::White;
+    started.from = pos(0, 0);
+    started.to = pos(0, 2);
+
+    const std::string started_json = network::serializeServerEvent(started);
+    CHECK(network::ClientGameSync::applyMessage(started_json, engine));
+
+    // The move should be animating (not instantly applied) after the start event.
+    CHECK_FALSE(engine.activeMotions().empty());
+    CHECK(engine.board().cell(pos(0, 2)).isEmpty());
+
+    engine.advanceTime(static_cast<int>(moveDurationMs(0, 0, 0, 2)));
 
     CHECK(engine.board().cell(pos(0, 2)).type() == PieceType::Rook);
     CHECK(engine.board().cell(pos(0, 0)).isEmpty());

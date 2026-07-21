@@ -18,14 +18,17 @@ struct GameEnded {
     model::Color winner;
 };
 
-using GameEvent = std::variant<GameStarted, realtime::CompletedMoveEvent,
-                               realtime::JumpCaptureEvent, GameEnded>;
+using GameEvent =
+    std::variant<GameStarted, realtime::CompletedMoveEvent, realtime::JumpCaptureEvent, GameEnded,
+                 realtime::MoveStartedEvent, realtime::JumpStartedEvent>;
 
 enum class GameEventType {
     GameStarted = 0,
     MoveCompleted = 1,
     JumpCapture = 2,
     GameEnded = 3,
+    MoveStarted = 4,
+    JumpStarted = 5,
 };
 
 inline GameEventType eventType(const GameEvent& event) {

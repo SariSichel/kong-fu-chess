@@ -26,6 +26,21 @@ struct JumpCaptureEvent {
     model::Position victim_to;
 };
 
+struct MoveStartedEvent {
+    int timestamp_ms = 0;
+    model::PieceType piece_type = model::PieceType::Empty;
+    model::Color piece_color = model::Color::White;
+    model::Position from;
+    model::Position to;
+};
+
+struct JumpStartedEvent {
+    int timestamp_ms = 0;
+    model::PieceType piece_type = model::PieceType::Empty;
+    model::Color piece_color = model::Color::White;
+    model::Position square;
+};
+
 struct MoveResolution {
     enum class Kind { CompletedMove, JumpCapture };
 
