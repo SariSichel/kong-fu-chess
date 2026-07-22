@@ -6,13 +6,14 @@
 #include <stdexcept>
 #include <string>
 
-#include "../constants.h"
-#include "../engine/game_engine.h"
-#include "../input/board_mapper.h"
-#include "../input/controller.h"
-#include "../model/piece.h"
-#include "../model/position.h"
-#include "../realtime/motion.h"
+#include "config/game_config.h"
+#include "config/ui_config.h"
+#include "engine/game_engine.h"
+#include "input/board_mapper.h"
+#include "input/controller.h"
+#include "model/piece.h"
+#include "model/position.h"
+#include "realtime/motion.h"
 #include "disconnect_overlay.h"
 #include "piece_sprite.h"
 #include "render_helpers.h"

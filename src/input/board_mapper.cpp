@@ -1,6 +1,6 @@
 #include "board_mapper.h"
 
-#include "../constants.h"
+#include "../config/game_config.h"
 
 namespace input {
 

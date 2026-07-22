@@ -1,9 +1,9 @@
 #include "shell_lobby.h"
 
-#include "../constants.h"
-#include "../network/local_ws_client.h"
-#include "../network/ws_protocol.h"
-#include "../view/render_helpers.h"
+#include "config/ui_config.h"
+#include "network/local_ws_client.h"
+#include "network/ws_protocol.h"
+#include "view/render_helpers.h"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>

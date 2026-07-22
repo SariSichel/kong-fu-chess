@@ -11,7 +11,8 @@
 #include <optional>
 #include <vector>
 
-#include "constants.h"
+#include "config/game_config.h"
+#include "config/network_config.h"
 #include "db/user_store.h"
 #include "elo/elo_rating.h"
 #include "engine/game_engine.h"
@@ -19,9 +20,9 @@
 #include "events/game_event.h"
 #include "engine/move_log.h"
 #include "io/algebraic.h"
-#include "session/session_manager.h"
-#include "session/disconnect_manager.h"
-#include "matchmaking/matchmaking_queue.h"
+#include "online/session_manager.h"
+#include "online/disconnect_manager.h"
+#include "online/matchmaking/matchmaking_queue.h"
 #include "network/ws_protocol.h"
 #include "network/command_queue.h"
 #include "network/client_game_sync.h"
@@ -1540,16 +1541,9 @@ TEST_CASE("event bus: multiple subscribers receive the same event") {
     int first_count = 0;
     int second_count = 0;
 
-    bus.subscribe([&first_count](const events::GameEvent& event) {
-        if (events::eventType(event) == events::GameEventType::GameStarted) {
-            ++first_count;
-        }
-    });
-    bus.subscribe([&second_count](const events::GameEvent& event) {
-        if (events::eventType(event) == events::GameEventType::GameStarted) {
-            ++second_count;
-        }
-    });
+    bus.subscribe<events::GameStarted>([&first_count](const events::GameStarted&) { ++first_count; });
+    bus.subscribe<events::GameStarted>(
+        [&second_count](const events::GameStarted&) { ++second_count; });
 
     bus.publish(events::GameStarted{"alice", "bob", 8765});
 
@@ -1563,9 +1557,7 @@ TEST_CASE("event bus: GameStarted payload is preserved") {
     std::string black_user;
     int port = 0;
 
-    bus.subscribe([&](const events::GameEvent& event) {
-        REQUIRE(events::eventType(event) == events::GameEventType::GameStarted);
-        const auto& started = std::get<events::GameStarted>(event);
+    bus.subscribe<events::GameStarted>([&](const events::GameStarted& started) {
         white_user = started.white_user;
         black_user = started.black_user;
         port = started.port;
@@ -1892,11 +1884,10 @@ TEST_CASE("game engine: publishes completed move events to EventBus") {
     std::vector<realtime::CompletedMoveEvent> received_moves;
 
     engine.setEventBus(&bus);
-    bus.subscribe([&received_moves](const events::GameEvent& event) {
-        if (events::eventType(event) == events::GameEventType::MoveCompleted) {
-            received_moves.push_back(std::get<realtime::CompletedMoveEvent>(event));
-        }
-    });
+    bus.subscribe<realtime::CompletedMoveEvent>(
+        [&received_moves](const realtime::CompletedMoveEvent& move) {
+            received_moves.push_back(move);
+        });
 
     copyBoardIntoEngine(engine, board);
     clickSquare(engine, controller, 0, 0);
@@ -1923,11 +1914,10 @@ TEST_CASE("game engine: publishes jump capture events to EventBus") {
     std::vector<realtime::JumpCaptureEvent> received_jumps;
 
     engine.setEventBus(&bus);
-    bus.subscribe([&received_jumps](const events::GameEvent& event) {
-        if (events::eventType(event) == events::GameEventType::JumpCapture) {
-            received_jumps.push_back(std::get<realtime::JumpCaptureEvent>(event));
-        }
-    });
+    bus.subscribe<realtime::JumpCaptureEvent>(
+        [&received_jumps](const realtime::JumpCaptureEvent& jump) {
+            received_jumps.push_back(jump);
+        });
 
     copyBoardIntoEngine(engine, board);
     clickSquare(engine, controller, 0, 3);

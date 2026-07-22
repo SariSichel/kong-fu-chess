@@ -72,25 +72,38 @@ set(KONG_FU_CHESS_SOURCES
     src/io/board_setup.cpp
     src/texttests/script_parser.cpp
     src/texttests/script_runner.cpp
-    src/session/session_manager.cpp
-    src/session/disconnect_manager.cpp
-    src/session/shell_login.cpp
-    src/network/ws_protocol.cpp
+    src/online/session_manager.cpp
+    src/online/disconnect_manager.cpp
+    src/ui/lobby/shell_login.cpp
+    src/network/protocol/json_util.cpp
+    src/network/protocol/color_codec.cpp
+    src/network/protocol/piece_codec.cpp
+    src/network/protocol/client_commands.cpp
+    src/network/protocol/server_lobby_messages.cpp
+    src/network/protocol/server_game_messages.cpp
     src/network/command_queue.cpp
     src/network/client_message_queue.cpp
     src/network/client_game_sync.cpp
     src/network/network_input.cpp
     src/db/user_store.cpp
     src/elo/elo_rating.cpp
-    src/matchmaking/matchmaking_queue.cpp
+    src/online/matchmaking/matchmaking_queue.cpp
     "${sqlite3_SOURCE_DIR}/sqlite3.c"
 )
 
 add_executable(kong_fu_chess
     src/main.cpp
+    src/app/host_election.cpp
+    src/app/game_loop.cpp
+    src/app/application.cpp
     ${KONG_FU_CHESS_SOURCES}
-    src/session/shell_lobby.cpp
+    src/ui/lobby/shell_lobby.cpp
     src/network/ws_server.cpp
+    src/network/server/client_registry.cpp
+    src/network/server/login_handler.cpp
+    src/network/server/queue_handler.cpp
+    src/network/server/disconnect_handler.cpp
+    src/network/server/message_router.cpp
     src/network/local_ws_client.cpp
     src/view/img.cpp
     src/view/piece_sprite.cpp

@@ -2,7 +2,7 @@
 
 #include <ostream>
 
-#include "../constants.h"
+#include "../config/game_config.h"
 #include "../model/position.h"
 
 namespace io {

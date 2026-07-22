@@ -8,7 +8,7 @@
 #include <unordered_map>
 
 #include "../events/game_event.h"
-#include "../matchmaking/matchmaking_queue.h"
+#include "online/matchmaking/matchmaking_queue.h"
 #include "../model/piece.h"
 
 namespace session {

@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "../constants.h"
+#include "config/game_config.h"
 
 namespace engine {
 class GameEngine;

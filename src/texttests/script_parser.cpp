@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-#include "../constants.h"
+#include "../config/game_config.h"
 #include "../io/board_parser.h"
 
 namespace texttests {

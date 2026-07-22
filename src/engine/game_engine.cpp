@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 
-#include "../constants.h"
+#include "../config/game_config.h"
 #include "../events/event_bus.h"
 #include "../events/game_event.h"
 #include "../rules/rule_engine.h"

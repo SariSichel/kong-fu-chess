@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <utility>
+#include <variant>
 #include <vector>
 
 #include "game_event.h"
@@ -14,6 +16,17 @@ public:
     using SubscriptionId = std::uint64_t;
 
     SubscriptionId subscribe(Handler handler);
+    SubscriptionId subscribeAny(Handler handler) { return subscribe(std::move(handler)); }
+
+    template <typename T, typename Fn>
+    SubscriptionId subscribe(Fn&& handler) {
+        return subscribe([h = std::forward<Fn>(handler)](const GameEvent& event) {
+            if (const auto* typed = std::get_if<T>(&event)) {
+                h(*typed);
+            }
+        });
+    }
+
     void unsubscribe(SubscriptionId id);
     void publish(const GameEvent& event);
 

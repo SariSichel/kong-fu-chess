@@ -1,6 +1,7 @@
 #include "render_helpers.h"
 
-#include "../constants.h"
+#include "../config/game_config.h"
+#include "../config/ui_config.h"
 #include "disconnect_overlay.h"
 #include "../engine/move_log.h"
 

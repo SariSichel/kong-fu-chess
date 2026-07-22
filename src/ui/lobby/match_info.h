@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "../model/piece.h"
+#include "model/piece.h"
 
 namespace session {
 

@@ -4,7 +4,7 @@
 #include <string>
 
 #include "../model/position.h"
-#include "../session/session_manager.h"
+#include "../online/session_manager.h"
 
 namespace engine {
 class GameEngine;

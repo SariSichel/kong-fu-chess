@@ -4,7 +4,7 @@
 #include <ostream>
 #include <string>
 
-#include "../constants.h"
+#include "../config/game_config.h"
 #include "../engine/game_engine.h"
 #include "../input/controller.h"
 #include "../io/board_parser.h"

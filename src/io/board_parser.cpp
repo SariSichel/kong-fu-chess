@@ -3,7 +3,7 @@
 #include <sstream>
 #include <vector>
 
-#include "../constants.h"
+#include "../config/game_config.h"
 
 namespace io {
 

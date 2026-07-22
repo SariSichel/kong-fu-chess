@@ -2,7 +2,8 @@
 
 #include <string>
 
-#include "../constants.h"
+#include "config/game_config.h"
+#include "config/paths.h"
 
 namespace view {
 
